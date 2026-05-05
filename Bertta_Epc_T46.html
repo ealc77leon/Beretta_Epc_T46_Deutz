@@ -1,257 +1,1774 @@
-"""
-ASTEC Quote PDF → Excel + Google Sheets
-========================================
-Lee un PDF de cotización ASTEC y guarda los datos en:
-  1. Excel local  (igual que antes)
-  2. Google Sheets (historial acumulado)
+<!DOCTYPE html>
+<html lang="en">
 
-SETUP (una sola vez) — ver SETUP_GOOGLE_SHEETS.md
-  pip install pdfplumber pandas openpyxl gspread google-auth
-"""
-
-import re
-import pdfplumber
-import pandas as pd
-from datetime import date
-
-# ── CONFIGURACIÓN ─────────────────────────────────────────────────────────────
-CREDENTIALS_PATH = r'C:\Users\backofficemineria\Documents\PHYTON\credentials.json'
-
-# Solo el ID del Sheet (parte entre /d/ y /edit en la URL)
-# URL completa: https://docs.google.com/spreadsheets/d/1bfQL9jxcvGzvDqKhYuYerekwRaGZCp1c1nIQet7NL_0/edit
-SHEET_ID  = '1bfQL9jxcvGzvDqKhYuYerekwRaGZCp1c1nIQet7NL_0'
-SHEET_TAB = 'Cotizaciones'
-# ──────────────────────────────────────────────────────────────────────────────
-
-HEADER_SHEETS = [
-    'Quote#', 'Fecha', 'Quote Date', 'Expires',
-    'Line', 'Part', 'Description',
-    'Expected Qty', 'Unit Price', 'Ext. Price',
-    'Lead Time', 'Notes'
-]
-
-# Patrón de línea de ítem: 
-ITEM_RE_B = re.compile(r'^(\d+)\s+(\S+)$')         
-
-QTY_PRICE_RE = re.compile(r'^(\d+\.\d+)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)') 
-
-ITEM_RE = re.compile(
-    r'^(\d+)\s+(\S+)\s+(\d+\.\d+)[A-Z]+\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)'
-)
-
-LEAD_TIME_LINE_RE = re.compile(r'^LEAD\s+TIME\b', re.IGNORECASE)
-
-# ── Extracción ─────────────────────────────────────────────────────────────────
-
-def extraer_header(texto):
-    """Extrae metadatos del encabezado de la cotización (página 1)."""
-    qn  = re.search(r'Quote\s+Number[:\s]+(\S+)',      texto, re.IGNORECASE)
-    dt  = re.search(r'Date:\s*(\d{1,2}/\d{1,2}/\d{4})', texto)
-    ex  = re.search(r'Expires:\s*(\d{1,2}/\d{1,2}/\d{4})', texto)
-    # Lead time global (ej: "LEAD TIME POR CONFIRMAR" o "Lead time: 8 weeks")
-    lt  = re.search(r'LEAD\s+TIME[^\n]*',              texto, re.IGNORECASE)
-    return {
-        'quote':            qn.group(1)  if qn  else 'DESCONOCIDO',
-        'quote_date':       dt.group(1)  if dt  else '',
-        'expires':          ex.group(1)  if ex  else '',
-        'lead_time_global': lt.group(0).strip() if lt else '',
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beretta EPC v2 — Electronic Parts Catalog</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
     }
 
+    :root {
+      --bg0: #0d0f11;
+      --bg1: #13171a;
+      --bg2: #1a1f24;
+      --bg3: #22282e;
+      --bg4: #2c333b;
+      --border: #2e3740;
+      --border2: #3d4755;
+      --text0: #e8edf2;
+      --text1: #a8b4c0;
+      --text2: #6b7a88;
+      --amber: #f59e0b;
+      --amber2: #d97706;
+      --amber3: #92400e;
+      --amberBg: #1c1408;
+      --blue: #3b82f6;
+      --blueBg: #0c1829;
+      --blue3: #1d4ed8;
+      --green: #10b981;
+      --greenBg: #041810;
+      --red: #ef4444;
+      --redBg: #180808;
+      --font-ui: 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'Consolas', 'Courier New', monospace;
+    }
 
-def parsear_pdf(ruta_pdf):
-    """
-    Extrae todos los ítems de la cotización.
-    Devuelve (header_info dict, lista de dicts con los ítems).
-    """
-    header_info = {}
-    items = []
+    body {
+      background: var(--bg0);
+      color: var(--text0);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden
+    }
 
-    with pdfplumber.open(ruta_pdf) as pdf:
-        for pg_num, page in enumerate(pdf.pages):
-            texto  = page.extract_text() or ''
-            lineas = texto.splitlines()
+    body.resizing {
+      user-select: none;
+      cursor: ns-resize
+    }
 
-            # Encabezado solo en página 1
-            if pg_num == 0:
-                header_info = extraer_header(texto)
-                print(f"  Quote Number : {header_info['quote']}")
-                print(f"  Fecha        : {header_info['quote_date']}")
-                print(f"  Expira       : {header_info['expires']}")
-                print(f"  Lead Time    : {header_info['lead_time_global'] or '(no indicado)'}")
+    /* ─── TOPBAR ─── */
+    .topbar {
+      background: var(--bg1);
+      border-bottom: 1px solid var(--border);
+      padding: 0 12px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      z-index: 100
+    }
 
-            # Páginas de totales / T&C no tienen ítems
-            if 'TERMS AND CONDITIONS' in texto:
-                break
+    .logo-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: 8px
+    }
 
-            i = 0
-            while i < len(lineas):
-                linea = lineas[i].strip()
-                m = ITEM_RE.match(linea)
+    .logo-box {
+      background: var(--amber);
+      color: #000;
+      font-weight: 900;
+      font-size: 14px;
+      letter-spacing: 1px;
+      padding: 4px 9px;
+      border-radius: 3px
+    }
 
-                # ── Formato A: todo en una línea "1 PART 3.00EA 26.76 80.28" ──
-                if m:
-                    line_num   = m.group(1)
-                    part       = m.group(2)
-                    qty        = float(m.group(3))
-                    unit_price = float(m.group(4).replace(',', ''))
-                    ext_price  = float(m.group(5).replace(',', ''))
-                    j = i + 1
+    .logo-sub {
+      color: var(--text1);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase
+    }
 
-                # ── Formato B: "1 PART" en una línea, qty+precio en otra ──
-                else:
-                    mb = ITEM_RE_B.match(linea)
-                    if mb:
-                        # Buscar la línea de qty+precio en las siguientes líneas
-                        qp = None
-                        j = i + 1
-                        while j < len(lineas) and qp is None:
-                            qp = QTY_PRICE_RE.match(lineas[j].strip())
-                            if qp is None:
-                                j += 1
-                        if qp is None:
-                            i += 1
-                            continue
-                        line_num   = mb.group(1)
-                        part       = mb.group(2)
-                        qty        = float(qp.group(1))
-                        unit_price = float(qp.group(2).replace(',', ''))
-                        ext_price  = float(qp.group(3).replace(',', ''))
-                        j += 1  # avanzar pasado la línea de qty+precio
-                    else:
-                        i += 1
-                        continue
+    .divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border2);
+      flex-shrink: 0
+    }
 
-                # ── Capturar descripción (igual para ambos formatos) ──
+    .topbar select,
+    .topbar input {
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      color: var(--text0);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      outline: none
+    }
 
-                desc_parts = []
-                lt_item = header_info.get('lead_time_global', '')
-                while j < len(lineas):
-                    ln = lineas[j].strip()
-                    if ITEM_RE.match(ln) or ITEM_RE_B.match(ln):
-                        break
-                    if ln == '':
-                        j += 1
-                        continue
-                    ln_clean = re.sub(r'\s+Discount\s+-[\d,.]+', '', ln).strip()
-                    if not ln_clean or re.match(r'^Discount\s', ln_clean):
-                        j += 1
-                        continue
-                    # Si la línea ES lead time → va a lt_item, NO a description
-                    if LEAD_TIME_LINE_RE.match(ln_clean):
-                        lt_item = re.sub(r'^LEAD\s+TIME\s*', '', ln_clean,
-                                         flags=re.IGNORECASE).strip()
-                    else:
-                        desc_parts.append(ln_clean)
-                    j += 1
+    .topbar select:focus,
+    .topbar input:focus {
+      border-color: var(--amber)
+    }
 
-                lt_item = header_info.get('lead_time_global', '')
-                for dp in desc_parts:
-                    lm = re.search(r'Lead\s+time[:\s]+(.+)', dp, re.IGNORECASE)
-                    if lm:
-                        lt_item = lm.group(1).strip()
+    .topbar input {
+      width: 220px
+    }
 
-                items.append({
-                    'Line':         line_num,
-                    'Part':         part,
-                    'Expected Qty': qty,
-                    'Unit Price':   unit_price,
-                    'Ext. Price':   ext_price,
-                    'Description':  ' '.join(desc_parts).strip(),
-                    'Lead Time':    lt_item,
+    .topbar input::placeholder {
+      color: var(--text2)
+    }
+
+    .tag {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-transform: uppercase
+    }
+
+    .tag-amber {
+      background: var(--amberBg);
+      color: var(--amber);
+      border: 1px solid var(--amber3)
+    }
+
+    .tag-blue {
+      background: var(--blueBg);
+      color: var(--blue);
+      border: 1px solid var(--blue3)
+    }
+
+    .ml-auto {
+      margin-left: auto
+    }
+
+    .sn-label {
+      color: var(--text2);
+      font-size: 11px
+    }
+
+    .sn-value {
+      color: var(--amber);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700
+    }
+
+    /* ─── LAYOUT ─── */
+    .main-layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden
+    }
+
+    /* ─── SIDEBAR ─── */
+    .sidebar {
+      width: 260px;
+      background: var(--bg1);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0
+    }
+
+    .sidebar-header {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+      flex-shrink: 0
+    }
+
+    .sidebar-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--text2);
+      text-transform: uppercase
+    }
+
+    .sidebar-scroll {
+      overflow-y: auto;
+      flex: 1
+    }
+
+    .sidebar-scroll::-webkit-scrollbar {
+      width: 4px
+    }
+
+    .sidebar-scroll::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 2px
+    }
+
+    .tree-item {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: background 0.1s
+    }
+
+    .tree-item:hover {
+      background: var(--bg3)
+    }
+
+    .tree-item.active {
+      background: var(--amberBg);
+      border-left-color: var(--amber)
+    }
+
+    .tree-item.active .tree-label {
+      color: var(--amber)
+    }
+
+    .tree-item.active .tree-code {
+      color: var(--amber2)
+    }
+
+    .tree-content {
+      padding: 5px 8px 5px 12px;
+      flex: 1;
+      min-width: 0
+    }
+
+    .tree-label {
+      font-size: 12px;
+      color: var(--text1);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3
+    }
+
+    .tree-code {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text2);
+      margin-top: 1px
+    }
+
+    .tree-parts-badge {
+      font-size: 10px;
+      color: var(--text2);
+      background: var(--bg4);
+      border-radius: 8px;
+      padding: 1px 6px;
+      flex-shrink: 0;
+      margin-right: 6px
+    }
+
+    .tree-hs-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--amber);
+      flex-shrink: 0;
+      margin-right: 8px;
+      margin-left: -2px
+    }
+
+    .model-group {
+      border-bottom: 1px solid var(--border)
+    }
+
+    .model-header {
+      padding: 7px 10px;
+      background: var(--bg2);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-left: 3px solid var(--amber)
+    }
+
+    .model-header:hover {
+      background: var(--bg3)
+    }
+
+    .model-name {
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 1px
+    }
+
+    .model-desc {
+      font-size: 10px;
+      color: var(--text2);
+      margin-left: auto
+    }
+
+    /* ─── CONTENT ─── */
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden
+    }
+
+    .content-header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      flex-shrink: 0
+    }
+
+    .asm-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap
+    }
+
+    .asm-code-big {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--amber)
+    }
+
+    .asm-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text0)
+    }
+
+    .asm-meta {
+      display: flex;
+      gap: 16px;
+      margin-top: 6px;
+      flex-wrap: wrap
+    }
+
+    .asm-meta-item {
+      font-size: 11px;
+      color: var(--text2)
+    }
+
+    .asm-meta-item span {
+      color: var(--text1)
+    }
+
+    /* ─── DIAGRAM PANEL ─── */
+    .diagram-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      min-height: 36px
+    }
+
+    .diagram-btn {
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      color: var(--text1);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: var(--font-ui);
+      white-space: nowrap;
+      transition: background 0.1s, color 0.1s
+    }
+
+    .diagram-btn:hover {
+      background: var(--bg4);
+      color: var(--text0)
+    }
+
+    .diagram-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed
+    }
+
+    .diagram-btn.active {
+      background: var(--amberBg);
+      border-color: var(--amber3);
+      color: var(--amber)
+    }
+
+    .diagram-btn-sm {
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      color: var(--text1);
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      min-width: 26px;
+      text-align: center;
+      transition: background 0.1s
+    }
+
+    .diagram-btn-sm:hover {
+      background: var(--bg4);
+      color: var(--text0)
+    }
+
+    .diagram-btn-sm:disabled {
+      opacity: 0.4;
+      cursor: not-allowed
+    }
+
+    .diagram-sep {
+      width: 1px;
+      height: 18px;
+      background: var(--border2);
+      flex-shrink: 0
+    }
+
+    .diagram-scroll {
+      flex: 1;
+      overflow: auto;
+      background: var(--bg0);
+      padding: 8px;
+      display: flex
+    }
+
+    .diagram-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px
+    }
+
+    .diagram-scroll::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 3px
+    }
+
+    .diagram-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--text2);
+      font-size: 12px;
+      text-align: center
+    }
+
+    .edit-hint {
+      font-size: 10px;
+      color: var(--amber);
+      font-style: italic;
+      padding: 0 3px;
+      flex-shrink: 0
+    }
+
+    /* ─── RESIZE HANDLE ─── */
+    .resize-handle-h {
+      height: 6px;
+      background: var(--bg1);
+      border-top: 1px solid var(--border2);
+      border-bottom: 1px solid var(--border2);
+      cursor: ns-resize;
+      flex-shrink: 0;
+      position: relative;
+      transition: background 0.1s
+    }
+
+    .resize-handle-h:hover,
+    .resize-handle-h.dragging {
+      background: var(--amberBg)
+    }
+
+    .resize-handle-h::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 32px;
+      height: 2px;
+      background: var(--border2);
+      border-radius: 2px
+    }
+
+    /* ─── HOTSPOT MARKERS ─── */
+    .hotspot-marker {
+      position: absolute;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--amber);
+      color: #000;
+      font-size: 9px;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(0, 0, 0, 0.45);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+      cursor: pointer;
+      transition: transform 0.15s, background 0.15s;
+      user-select: none;
+      line-height: 1
+    }
+
+    .hotspot-marker:hover {
+      transform: translate(-50%, -50%) scale(1.3);
+      z-index: 20 !important
+    }
+
+    .hotspot-marker.hs-selected {
+      background: var(--green);
+      border-color: rgba(0, 255, 120, 0.4);
+      transform: translate(-50%, -50%) scale(1.35);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.6), 0 2px 6px rgba(0, 0, 0, 0.7);
+      z-index: 15 !important
+    }
+
+    .hotspot-marker.edit-mode:hover {
+      background: var(--red)
+    }
+
+    /* ─── TABLE ─── */
+    .table-wrap {
+      flex: 1;
+      overflow: auto
+    }
+
+    .table-wrap::-webkit-scrollbar {
+      width: 6px;
+      height: 6px
+    }
+
+    .table-wrap::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 3px
+    }
+
+    .parts-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px
+    }
+
+    .parts-table thead {
+      position: sticky;
+      top: 0;
+      z-index: 10
+    }
+
+    .parts-table th {
+      background: var(--bg2);
+      color: var(--text2);
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border2);
+      text-align: left;
+      white-space: nowrap
+    }
+
+    .parts-table th.th-num {
+      width: 48px;
+      text-align: center
+    }
+
+    .parts-table th.th-qty {
+      width: 52px;
+      text-align: center
+    }
+
+    .parts-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle
+    }
+
+    .parts-table tr {
+      cursor: pointer
+    }
+
+    .parts-table tr:hover td {
+      background: var(--bg2)
+    }
+
+    .parts-table tr.highlighted td {
+      background: var(--amberBg)
+    }
+
+    .parts-table tr.row-linked td {
+      background: #0c1829;
+      border-left: 2px solid var(--blue)
+    }
+
+    .cell-item {
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text2);
+      font-weight: 700
+    }
+
+    .cell-hs-dot {
+      display: inline-block;
+      width: 5px;
+      height: 5px;
+      background: var(--amber);
+      border-radius: 50%;
+      margin-left: 4px;
+      vertical-align: middle
+    }
+
+    .cell-code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--blue);
+      word-break: break-all
+    }
+
+    .cell-desc-it {
+      color: var(--text0);
+      font-size: 12px
+    }
+
+    .cell-desc-en {
+      color: var(--text2);
+      font-size: 11px;
+      font-style: italic;
+      margin-top: 1px
+    }
+
+    .cell-qty {
+      text-align: center;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--text0)
+    }
+
+    .cell-partnum {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--amber)
+    }
+
+    .cell-partnum.special {
+      color: var(--green)
+    }
+
+    .special-row td {
+      border-left: 2px solid var(--green)
+    }
+
+    /* ─── WELCOME / STATUS ─── */
+    .welcome {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      color: var(--text2)
+    }
+
+    .welcome-icon {
+      font-size: 48px;
+      opacity: 0.3
+    }
+
+    .welcome-title {
+      font-size: 16px;
+      color: var(--text1);
+      font-weight: 600
+    }
+
+    .welcome-sub {
+      font-size: 12px;
+      text-align: center;
+      max-width: 320px;
+      line-height: 1.6
+    }
+
+    .welcome-stats {
+      display: flex;
+      gap: 24px;
+      margin-top: 8px
+    }
+
+    .stat-box {
+      text-align: center;
+      padding: 12px 20px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px
+    }
+
+    .stat-num {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--amber);
+      font-family: var(--font-mono)
+    }
+
+    .stat-lbl {
+      font-size: 10px;
+      color: var(--text2);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-top: 2px
+    }
+
+    .statusbar {
+      background: var(--bg1);
+      border-top: 1px solid var(--border);
+      padding: 3px 14px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 10px;
+      color: var(--text2);
+      flex-shrink: 0
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0
+    }
+
+    mark {
+      background: var(--amber3);
+      color: var(--amber);
+      border-radius: 2px;
+      padding: 0 2px
+    }
+
+    .diag-toggle-btn {
+      background: transparent;
+      border: 1px solid var(--border2);
+      color: var(--text2);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: var(--font-ui);
+      transition: all 0.1s
+    }
+
+    .diag-toggle-btn:hover {
+      border-color: var(--amber);
+      color: var(--amber)
+    }
+
+    .diag-toggle-btn.active {
+      background: var(--amberBg);
+      border-color: var(--amber3);
+      color: var(--amber)
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 3px
+    }
+
+    /* ─── TOOLTIP for hotspot instructions ─── */
+    .hs-info-bar {
+      padding: 4px 14px;
+      background: var(--amberBg);
+      border-bottom: 1px solid var(--amber3);
+      font-size: 10px;
+      color: var(--amber);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const { useState, useMemo, useCallback, useRef, useEffect } = React;
+    const ce = React.createElement;
+
+    // ============================================================
+    // COMPLETE T46 PARTS DATABASE — S/N 18925
+    // ============================================================
+    const DB = {
+      models: [{
+        id: 'T46', sn: '18925', year: '2025', engine: 'Deutz TCD 2.9 Stage 5', assemblies: [
+          {
+            id: 'A1053', drawing: 'DIS. 246-000/1', type: 'COD.', title: 'TESTA 43-2V', titleEN: 'Rotary Head 43-2V', group: 'ROTARY HEAD ASSEMBLY', parts: [
+              { item: 1, idCode: 'DA1.DA11.00034', qty: 2, descIT: 'MOTORE IDRAULICO OMT', descEN: 'HYDRAULIC MOTOR', pn: 'HYMO100008' },
+              { item: 2, idCode: 'V45.M10X40', qty: 8, descIT: 'VITE T.C. M10X40-12K', descEN: 'SCREW SOCKET HEAD M10X40-12K', pn: 'SCR-SK-M10-40-12K' },
+              { item: 3, idCode: '500.5012.00007', qty: 2, descIT: 'GUARNIZIONE CARTA PER MOTORE', descEN: 'PAPER FOR MOTOR', pn: '221-024' },
+              { item: 4, idCode: 'V51.10X30', qty: 2, descIT: 'SPINA DI CENTRAGGIO 10X30', descEN: 'CENTERING PIN 10x30', pn: 'C-PIN-10-30' },
+              { item: 5, idCode: 'B60.B601.00010', qty: 2, descIT: 'PIGNONE PER MOTORE', descEN: 'MOTOR PINION', pn: '225-005-3.2' },
+              { item: 6, idCode: 'B60.B507.00049', qty: 1, descIT: 'SCATOLA PER TESTA', descEN: 'BOX HEAD', pn: '246-001-1' },
+              { item: 7, idCode: '400.4002.00022', qty: 2, descIT: 'CUSCINETTO A SFERE', descEN: 'BALL BEARING', pn: '6207' },
+              { item: 8, idCode: 'V55.D35', qty: 1, descIT: 'SEEGER ESTERNO 35', descEN: 'EXTERNAL CIRCLIP 35', pn: 'RNG-EX-35' },
+              { item: 9, idCode: 'V45.M10X30', qty: 12, descIT: 'VITE T.C. M10X30-12K', descEN: 'SCREW SOCKET HEAD M10X30-12K', pn: 'SCR-SK-M10-30-12K' },
+              { item: 10, idCode: 'B60.B601.00020', qty: 2, descIT: 'COPERCHIO PIGNONE', descEN: 'PINION COVER', pn: '221-006-1' },
+              { item: 11, idCode: 'V35.M16X45', qty: 10, descIT: 'VITE T.E. M16X45 10.9', descEN: 'SCREW HEX HEAD M16X45 10.9', pn: 'SCR-HX-M16-45 10.9' },
+              { item: 12, idCode: '500.5004.00075', qty: 2, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-167' },
+              { item: 13, idCode: 'B60.B601.00018', qty: 1, descIT: 'BUSSOLA', descEN: 'SPINDLE BEARING LOCK BUSH', pn: '221-002' },
+              { item: 14, idCode: 'V45.M10X35', qty: 26, descIT: 'VITE T.C. M10X35-12K', descEN: 'SCREW SOCKET HEAD M10X35-12K', pn: 'SCR-SK-M10-35-12K' },
+              { item: 15, idCode: '500.5012.00013', qty: 1, descIT: 'GUARNIZIONE 5MM DOPPIO LABBRO', descEN: 'SEAL 5MM DOUBLE LIP', pn: 'SLSM-80-75-8DL' },
+              { item: 16, idCode: 'B60.B601.00015', qty: 1, descIT: 'FLANGIA SUPERIORE', descEN: 'UPPER FLANGE', pn: '221-008' },
+              { item: 17, idCode: '500.5004.00013', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-4442' },
+              { item: 18, idCode: 'B60.B507.00049', qty: 1, descIT: 'COPERCHIO PER TESTATA', descEN: 'HEAD COVER', pn: '246-002' },
+              { item: 19, idCode: '400.4002.00001', qty: 1, descIT: 'CUSCINETTO A RULLI CONICI', descEN: 'TAPER ROLLER BEARING', pn: '32214A' },
+              { item: 20, idCode: '500.5004.00005', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-4582' },
+              { item: 21, idCode: '500.5001.00018', qty: 1, descIT: 'GUARNIZIONE 5MM DOPPIO LABBRO', descEN: 'SEAL 5MM DOUBLE LIP', pn: 'SLSM-45-110-12DL' },
+              { item: 22, idCode: 'V70.18X10X30', qty: 2, descIT: 'CHIAVETTA PARALLELA', descEN: 'KEY', pn: 'KEYP10007' },
+              { item: 23, idCode: 'B60.B601.00001', qty: 2, descIT: 'MEZZE LUNE', descEN: 'HALF MOON RING', pn: '246-007' },
+              { item: 24, idCode: 'B60.B509.00002', qty: 1, descIT: 'ATTACCO FLANCIATO', descEN: 'FLANGE PIN OR BOX', pn: '221-014-3' },
+              { item: 25, idCode: '500.5004.00004', qty: 2, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-182' },
+              { item: 26, idCode: 'V30.M12X45', qty: 1, descIT: 'VITE T.E. M12X45', descEN: 'SCREW HEX HEAD M12X45', pn: 'SCR-HX-M12-45' },
+              { item: 27, idCode: 'B60.B601.00027', qty: 1, descIT: 'FLANGIA CONICA', descEN: 'CONICAL FLANGE', pn: '246-005' },
+              { item: 28, idCode: 'B60.B601.00007', qty: 1, descIT: 'GHIERA', descEN: 'NUT', pn: '246-006' },
+              { item: 29, idCode: 'B60.B601.00022', qty: 1, descIT: 'FLANGIA INFERIORE', descEN: 'LOWER FLANGE FOR SPINDLE', pn: '246-004' },
+              { item: 30, idCode: '400.4002.00002', qty: 1, descIT: 'CUSCINETTO A RULLI CONICI', descEN: 'TAPER ROLLER BEARING', pn: '3217A' },
+              { item: 31, idCode: 'B60.B601.00002', qty: 1, descIT: 'CANOTTO CENTRALE', descEN: 'CENTRAL SHAFT', pn: '246-003' },
+              { item: 32, idCode: 'V70.16X10X40', qty: 2, descIT: 'CHIAVETTA PARALLELA', descEN: 'KEY', pn: 'KEYP10008' },
+              { item: 33, idCode: 'B60.B601.00011', qty: 2, descIT: 'CORONA CENTRALE', descEN: 'CENTRAL GEAR', pn: '221-004' },
+              { item: 34, idCode: 'V45.M10X35', qty: 8, descIT: 'VITE T.C. M10X35-12K', descEN: 'SCREW SOCKET HEAD M10X35-12K', pn: 'SCR-SK-M10-35-12K' },
+              { item: 35, idCode: 'B60.B601.00012', qty: 1, descIT: 'DISTANZIALE PER CUSCINETTO', descEN: 'SPACER FOR BEARING', pn: '221-012' },
+              { item: 36, idCode: '500.5004.00076', qty: 1, descIT: 'GUARNIZIONE OR SPECIALE 3.53 L=1400', descEN: 'SPECIAL ORING SEAL', pn: 'SLOR-SP020' },
+              { item: 37, idCode: 'B60.B601.00019', qty: 1, descIT: 'FLANGIA DI TENUTA', descEN: 'SPINDLE SEALING FLANGE', pn: '221-011' },
+              { item: 38, idCode: '500.5001.00017', qty: 1, descIT: 'GUARNIZIONE 5MM DOPPIO LABBRO', descEN: 'SEAL 5MM', pn: 'SLSM-75-90-10DL' },
+              { item: 39, idCode: 'V56.D75', qty: 1, descIT: 'SEEGER INTERNO 75', descEN: 'INTERNAL CIRCLIP 75', pn: 'RNG-IN-75' },
+              { item: 40, idCode: 'B60.B601.00017', qty: 1, descIT: 'GHIERA', descEN: 'RING NUT', pn: '221-010' },
+              { item: 41, idCode: 'B60.B507.00041', qty: 1, descIT: 'SUPPORTO ANTIROTAZIONE TESTINA', descEN: 'ANTI-ROTATION SUPPORT', pn: '221-053' },
+              { item: 42, idCode: 'B60.B601.00021', qty: 1, descIT: 'RONDELLA DI PROTEZIONE', descEN: 'WASHER', pn: '221-054' },
+              { item: 43, idCode: 'A1014', qty: 1, descIT: 'TESTINA ARIA-GASOLIO 1"1/4 Gas', descEN: 'AIR WATER FLUSHING HEAD 1"1/4 Gas', pn: '350', special: true },
+              { item: 44, idCode: '', qty: 1, descIT: 'TAPPO 1-2IN GAS', descEN: 'PLUG 1-2IN GAS', pn: 'FA-PLG-100004' },
+              { item: 45, idCode: 'V45.M12X38', qty: 16, descIT: 'VITE T.C. M12X38-12K', descEN: 'SCREW SOCKET HEAD M12X38-12K', pn: 'SCR-SK-M12-30-12K' },
+              { item: 46, idCode: 'V22.M10XSTD', qty: 4, descIT: 'DADO AUTOBLOCCANTE M10', descEN: 'LOCK NUT M10', pn: 'NUT-LK-M10' },
+              { item: 47, idCode: 'WAI.WA11.00092', qty: 2, descIT: 'DEVIATORE', descEN: 'DEVIATOR', pn: 'DI625-4-1' },
+              { item: 48, idCode: 'B50.B507.00013', qty: 1, descIT: 'SUPPORTO PER DEVIATORE', descEN: 'DEVIATOR SUPPORT', pn: '561-037' },
+              { item: 49, idCode: '', qty: 1, descIT: 'LIVELLO OLIO-GASOLIO 1/2"', descEN: '1/2" PLUG LEVEL OIL-DIESEL', pn: 'FA-PLG-100010' },
+              { item: 50, idCode: 'B60.B507.00020', qty: 1, descIT: 'PORTA DEVIATORE DI FLUSSO', descEN: 'DEVIATOR SUPPORT', pn: '221-052' },
+              { item: 51, idCode: 'V72.12X8X70', qty: 2, descIT: 'CHIAVETTA PARALLELA', descEN: 'KEY', pn: 'KEYP10010' },
+              { item: 60, idCode: '500.5010.00021', qty: 1, descIT: 'KIT DI GUARNIZIONI COMPLETO', descEN: 'COMPLETE SEAL KIT', pn: '—', special: true }]
+          },
+          {
+            id: 'A1014', drawing: 'DIS. 350/0', type: 'COD.', title: 'TESTINA ARIA ACQUA 1"1/4', titleEN: 'Air/Water Flushing Head 1"1/4 Gas', group: 'ROTARY HEAD ASSEMBLY', parts: [
+              { item: 1, idCode: 'B60.B602.00006', qty: 1, descIT: 'CONTROGHIERA', descEN: 'COUNTER RING NUT', pn: '350-004' },
+              { item: 2, idCode: 'B60.B602.00016', qty: 1, descIT: 'GHIERA', descEN: 'RING NUT', pn: '350-003' },
+              { item: 3, idCode: '500.5004.00020', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-6200' },
+              { item: 4, idCode: '400.4002.00004', qty: 2, descIT: 'CUSCINETTO A RULLI CONICI', descEN: 'TAPER ROLLER BEARING', pn: '32010 X' },
+              { item: 5, idCode: 'B60.B602.00003', qty: 1, descIT: 'ALBERO', descEN: 'SHAFT', pn: '350-002' },
+              { item: 6, idCode: 'B60.B602.00004', qty: 1, descIT: 'ANELLO IN ACCIAIO', descEN: 'STEEL RING', pn: '350-005' },
+              { item: 7, idCode: '500.5002.00006', qty: 1, descIT: 'PACCHETTO 50-70-41', descEN: 'VEEPAC SEAL 50-70-41', pn: 'V-PACK-50-70-41' },
+              { item: 8, idCode: 'V50.10MB', qty: 1, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-GRS-100002' },
+              { item: 9, idCode: 'B60.B602.00005', qty: 1, descIT: 'CORPO TESTINA AD INIEZIONE', descEN: 'BODY INJECTION', pn: '350-001' },
+              { item: 10, idCode: '', qty: 2, descIT: 'TAPPO 1 1-2IN GAS', descEN: 'PLUG 1 1-2IN GAS', pn: 'FA-PLG-100008' },
+              { item: 11, idCode: '', qty: 1, descIT: 'NIPPLO DA 1"1/4', descEN: 'STRAIGHT ADAPTER 1"1/4 Gas', pn: 'FA-STR-100006' }]
+          },
+          {
+            id: 'B2033', drawing: 'DIS. 561-065/0', type: 'COD.', title: 'CARRELLO 43-2V SU SLITTA 120x120', titleEN: 'Carriage 43-2V on Mast 120x120 with Catenary', group: 'MAST & CARRIAGE', parts: [
+              { item: 1, idCode: 'B50.B504.00011', qty: 1, descIT: 'SUPPORTO PER CATENARIA', descEN: 'CHAIN UNIT CLAMPING SUPPORT', pn: '220-037' },
+              { item: 2, idCode: 'C16.ISO16B2.C', qty: 2, descIT: 'CATENA DA 1" DOPPIA', descEN: '1" DOUBLE CHAIN', pn: '16-B2' },
+              { item: 3, idCode: 'V20.M20XSTD', qty: 2, descIT: 'DADO AUTOBLOCCANTE DA M20', descEN: 'LOCK NUT M20', pn: 'NUT-LK-M20' },
+              { item: 4, idCode: '200.2001.00002', qty: 16, descIT: 'MOLLA A TAZZA', descEN: 'BELLEVILLE WASHER', pn: 'SPR-WS-21-40-2' },
+              { item: 5, idCode: 'B60.B607.00001', qty: 2, descIT: 'PERNO TENDICATENA PER 16-B2', descEN: '16-B2 CHAIN TIGHTENING PIN', pn: '222-011' },
+              { item: 6, idCode: 'C16.ISO16B2.F', qty: 1, descIT: 'FALSA MAGLIA 16-B2', descEN: '16-B2 FALSE LINK', pn: '16-B2-F' },
+              { item: 7, idCode: 'B60.B607.00003', qty: 1, descIT: 'LARDONE POSTERIORE', descEN: 'REAR GIB', pn: '561-040-B' },
+              { item: 8, idCode: 'B1395', qty: 4, descIT: 'PATTINO IN GOMMA SERIE 4', descEN: 'RUBBER SLIDE SERIES 4', pn: '561-035-1' },
+              { item: 9, idCode: 'B60.B607.00004', qty: 1, descIT: 'PIASTRA DI BASE PER CARRELLO', descEN: 'CARRIAGE PLATE', pn: '561-040-A' },
+              { item: 10, idCode: 'B60.B607.00005', qty: 1, descIT: 'LARDONE ANTERIORE', descEN: 'FRONT GIB', pn: '561-040-C' },
+              { item: 11, idCode: 'V45.M14X55', qty: 14, descIT: 'VITE T.C. M14X55-12K', descEN: 'SCREW SOCKET HEAD M14X55-12K', pn: 'SCR-SK-M14-55-12K' },
+              { item: 12, idCode: 'B60.B607.00006', qty: 1, descIT: 'GUIDA ANTERIORE', descEN: 'FRONT GUIDE', pn: '241-020-A' },
+              { item: 13, idCode: 'V30.M14X50', qty: 16, descIT: 'VITE T.E. M14X50', descEN: 'SCREW HEX HEAD M14X50', pn: 'SCR-HX-M14-50' },
+              { item: 14, idCode: 'B60.B607.00007', qty: 1, descIT: 'GUIDA POSTERIORE', descEN: 'REAR GUIDE', pn: '241-020-B' },
+              { item: 15, idCode: 'V30.M16X50', qty: 2, descIT: 'VITE T.E. M16X50', descEN: 'SCREW HEX HEAD M16X50', pn: 'SCR-HX-M16-50' },
+              { item: 16, idCode: 'W2060', qty: 1, descIT: 'CILINDRO TRASLATORE DN40/25 C=400mm', descEN: 'CYLINDER DN40/25 C=400mm', pn: '610-000-400' },
+              { item: 17, idCode: 'V30.M16X25', qty: 12, descIT: 'VITE T.E. M16X25', descEN: 'SCREW HEX HEAD M16X25', pn: 'SCR-HX-M16-25' },
+              { item: 18, idCode: 'B60.B607.00008', qty: 1, descIT: 'PIASTRA 43-2V SU CARRELLO 46-4V', descEN: '43-2V PLATE ON 46-4V CARRIAGE', pn: '221-028' },
+              { item: 19, idCode: 'A1053', qty: 1, descIT: 'TESTA 43-2V', descEN: 'ROTARY HEAD 43-2V', pn: '246-000-1', special: true },
+              { item: 20, idCode: 'V50.10MB', qty: 4, descIT: 'NIPPLE INGRASSATORE 10X1', descEN: 'GREASE NIPPLE 10X1', pn: 'FA-STR-100001' },
+              { item: 21, idCode: 'V30.M16X40', qty: 3, descIT: 'VITE T.E. M16X40', descEN: 'SCREW HEX HEAD M16X40', pn: 'SCR-HX-M16-40' },
+              { item: 22, idCode: 'FP1.FP10.00002', qty: 1, descIT: 'VALVOLA DI BLOCCO FDP 1/4', descEN: 'HYDRAULIC STOP VALVE FDP 1/4', pn: 'HYCB100005' },
+              { item: 23, idCode: 'V20.M10XSTD', qty: 4, descIT: 'DADO AUTOBLOCCANTE M10', descEN: 'LOCK NUT M10', pn: 'NUT-LK-M10' },
+              { item: 24, idCode: 'V30.M10X35', qty: 4, descIT: 'VITE T.E. M10X35', descEN: 'SCREW HEX HEAD M10X35', pn: 'SCR-HX-M10-35' },
+              { item: 25, idCode: 'BS1.BS10.00007', qty: 1, descIT: 'ATTACCO DESTRO PER CATENARIA', descEN: 'RIGHT CATENARY FASTENING', pn: 'CHPL100004' },
+              { item: 26, idCode: 'V30.M10X20', qty: 6, descIT: 'VITE T.E. M10X20', descEN: 'SCREW HEX HEAD M10X20', pn: 'SCR-HX-M10-20' },
+              { item: 27, idCode: 'B50.B504.00012', qty: 1, descIT: 'SUPPORTO STANDARD PER CATENARIA', descEN: 'STANDARD FLEXIBLE HOSE SUPPORT', pn: '220-129-3' },
+              { item: 28, idCode: 'BS1.BS10.00002', qty: 1, descIT: 'CATENARIA SR309 - 34 MAGLIE', descEN: 'CATENARY SR309 - 34 UNIT', pn: 'CHPL100007' },
+              { item: 29, idCode: 'BS1.BS10.00006', qty: 1, descIT: 'ATTACCO SINISTRO PER CATENARIA', descEN: 'LEFT CATENARY FASTENING', pn: 'CHPL100003' },
+              { item: 30, idCode: 'B50.B504.00013', qty: 1, descIT: 'MENSOLA PORTA CATENARIA', descEN: 'CHAIN SHELF FOR HEAD', pn: '220-128' },
+              { item: 50, idCode: '500.5009.00006', qty: 1, descIT: 'KIT DI GUARNIZIONI 40/25', descEN: 'SEAL KIT 40/25', pn: '—', special: true }]
+          },
+          {
+            id: 'B1395', drawing: 'DIS. 561-035/1', type: 'COD.', title: 'RUBBER SLIDE SERIES 4', titleEN: 'Rubber Slide Series 4 — Plastic Carriage Slide', group: 'MAST & CARRIAGE', parts: [
+              { item: 1, idCode: 'B60.B610.00003', qty: 1, descIT: 'PATTINO PER SCORRIMENTO CARRELLO', descEN: 'CARRIAGE SLIDING SLIDE', pn: '561-032-5' },
+              { item: 2, idCode: 'B60.B611.00005', qty: 1, descIT: 'DISTANZIALE PATTINO DI SCORRIMENTO', descEN: 'SLIDING SLIDE SLEEVE', pn: '561-038' },
+              { item: 3, idCode: 'V40.M16X30', qty: 4, descIT: 'VITE T.C. M16X30', descEN: 'SCREW SOCKET HEAD M16X30', pn: 'SCR-SK-M16-30' },
+              { item: 4, idCode: 'B60.B610.00002', qty: 2, descIT: 'RASCHIAPOLVERE PER SLITTA', descEN: 'DUST SCRAPER', pn: '561-199-1' },
+              { item: 5, idCode: 'V21.M20XSTD', qty: 1, descIT: 'DADO M20', descEN: 'NUT M20', pn: 'NUT-HX-M20' },
+              { item: 6, idCode: 'V30.M20X60', qty: 1, descIT: 'VITE T.E. M20X60', descEN: 'SCREW HEX HEAD M20X60', pn: 'SCR-HX-M20-60' },
+              { item: 7, idCode: 'B60.B611.00003', qty: 2, descIT: 'PERNO PER INGRASSAGGIO PATTINO', descEN: 'LUBRICATING SLIDE PIN', pn: '779-033' },
+              { item: 8, idCode: 'V50.10MB', qty: 2, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-STR-100001' },
+              { item: 9, idCode: 'B60.B611.00001', qty: 2, descIT: 'SUPPORTO RASCHIAPOLVERE', descEN: 'DUST SCRAPER SUPPORT', pn: '561-039-1' },
+              { item: 10, idCode: 'B60.B611.00006', qty: 1, descIT: 'PORTA PATTINO IN PLASTICA', descEN: 'STEEL SUPPORT', pn: '561-033-2' },
+              { item: 11, idCode: 'V30.M10X30', qty: 4, descIT: 'VITE T.E. M10X30', descEN: 'SCREW HEX HEAD M10X30', pn: 'SCR-HX-M10-30' },
+              { item: 50, idCode: 'B1395', qty: 1, descIT: 'PATTINO COMPLETO SERIE 4', descEN: 'COMPLETE PLASTIC SLIDE SERIES 4', pn: '—', special: true }]
+          },
+          {
+            id: 'C1370', drawing: 'DIS. 920-000/1', type: 'COD.', title: 'SLITTA COMPONIBILE ST 120x120', titleEN: 'Standard Modular Mast 120x120 Series 4', group: 'MAST & CARRIAGE', parts: [
+              { item: 1, idCode: 'V50.10MB', qty: 1, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-STR-100001' },
+              { item: 2, idCode: 'B60.B603.00001', qty: 1, descIT: 'PERNO PER RULLO CATENA', descEN: 'CHAIN ROLLER PIN', pn: '901-005-1' },
+              { item: 3, idCode: 'B60.B603.00002', qty: 1, descIT: 'RULLO FOLLE PER CATENA DA 1" DOPPIA', descEN: 'CHAIN ROLLER', pn: '901-004-1' },
+              { item: 4, idCode: 'B60.B603.00003', qty: 1, descIT: 'DISTANZIALE PER PERNO RULLO H4', descEN: 'ROLLER PIN SPACER H4', pn: '901-005-H4' },
+              { item: 5, idCode: '400.4001.00001', qty: 4, descIT: 'CUSCINETTO A SFERE 25-52-15', descEN: 'BALL BEARING 25-52-15', pn: 'SKF-6205' },
+              { item: 6, idCode: '500.5001.00001', qty: 2, descIT: 'GUARNIZIONE SMIM 30-52-7', descEN: 'SMIM SEAL 30-52-7', pn: 'SLSM-30-52-7' },
+              { item: 7, idCode: 'V56.D52', qty: 2, descIT: 'ANELLO ELASTICO SEEGER INTERNI D52', descEN: 'INTERNAL CIRCLIP D52mm', pn: 'RNG-IN-52' },
+              { item: 8, idCode: 'B60.B603.00004', qty: 1, descIT: 'DISTANZIALE PER PERNO RULLO H28', descEN: 'ROLLER PIN SPACER H28', pn: '901-005-H28' },
+              { item: 9, idCode: 'V10.M24X45X3', qty: 1, descIT: 'RONDELLA M24', descEN: 'FLAT WASHER M24', pn: 'WSH-FL-M24-45-3' },
+              { item: 10, idCode: 'V20.M24XSTD', qty: 1, descIT: 'DADO AUTOBLOCCANTE M24', descEN: 'LOCK NUT M24', pn: 'NUT-LK-M24' },
+              { item: 11, idCode: 'C16.ISO16B2.C', qty: 1, descIT: 'CATENA DA 1" DOPPIA', descEN: '1" DOUBLE CHAIN', pn: '16-B2' },
+              { item: 12, idCode: 'B50.B504.00001', qty: 1, descIT: 'PRIMO PEZZO SLITTA COMPONIBILE STD', descEN: 'FIRST PIECE MODULAR MAST', pn: '920-001-1-1715' },
+              { item: 13, idCode: 'V45.M16X50', qty: 12, descIT: 'VITE T.C. M16X50-12K', descEN: 'SCREW SOCKET HEAD M16X50-12K', pn: 'SCR-SK-M16-50-12K' },
+              { item: 14, idCode: 'V40.M14X25', qty: 6, descIT: 'VITE T.C. M14X25', descEN: 'SCREW SOCKET HEAD M14X25', pn: 'SCR-SK-M14-25' },
+              { item: 15, idCode: 'B50.B504.00003', qty: 2, descIT: 'PROLUNGA SLITTA L=500mm', descEN: 'EXTENSION MAST L=500mm', pn: '920-002-500-1' },
+              { item: 16, idCode: 'V20.M12XSTD', qty: 24, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+              { item: 17, idCode: 'V30.M12X40', qty: 24, descIT: 'VITE T.E. M12X40', descEN: 'SCREW HEX HEAD M12X40', pn: 'SCR-HX-M12-40' },
+              { item: 18, idCode: 'B50.B504.00004', qty: 2, descIT: 'PIASTRA PER BLOCCAGGIO PROLUNGA', descEN: 'MAST CLAMPING PLATE', pn: '920-004' },
+              { item: 19, idCode: 'B60.B603.00044', qty: 1, descIT: 'COPERCHIO PER PIGNONE CATENA', descEN: 'CHAIN PINION COVER', pn: '901-003-1' },
+              { item: 20, idCode: 'V30.M10X30', qty: 16, descIT: 'VITE T.E. M10X30', descEN: 'SCREW HEX HEAD M10X30', pn: 'SCR-HX-M10-30' },
+              { item: 21, idCode: '400.4010.00002', qty: 1, descIT: 'CUSCINETTO A SFERE ORIENTABILI', descEN: 'ORIENTAL BALL BEARING', pn: '2207-TVH-2RS1' },
+              { item: 22, idCode: 'V56.D72', qty: 1, descIT: 'ANELLO ELASTICO SEEGER INTERNI D72', descEN: 'INTERNAL CIRCLIP D72', pn: 'RNG-IN-72' },
+              { item: 23, idCode: 'V30.M8X20', qty: 4, descIT: 'VITE T.E. M8X20', descEN: 'SCREW HEX HEAD M8X20', pn: 'SCR-HX-M8-20' },
+              { item: 24, idCode: 'B60.B603.00006', qty: 1, descIT: 'COPERCHIETTO PER COPERTURA SLITTA', descEN: 'MAST COVER', pn: '901-001-C-1' },
+              { item: 25, idCode: 'B50.B504.00005', qty: 1, descIT: 'TESTATA PER SLITTA COMPONIBILE SERIE 4', descEN: 'HEAD MAST FOR MODULAR MAST', pn: '920-003' },
+              { item: 26, idCode: 'B60.B603.00043', qty: 1, descIT: 'PIGNONE PER CATENA DA 1"', descEN: '1" CHAIN PINION', pn: '901-002-1' },
+              { item: 27, idCode: 'RR1.RR10.00001', qty: 1, descIT: 'RIDUTTORE', descEN: 'GEAR REDUCER', pn: 'GERE100001' },
+              { item: 28, idCode: 'V40.M12X40', qty: 2, descIT: 'VITE T.C. M12X40', descEN: 'SCREW SOCKET HEAD M12X40', pn: 'SCR-SK-M12-40' },
+              { item: 29, idCode: 'DA1.DA11.00030', qty: 1, descIT: 'MOTORE IDRAULICO', descEN: 'HYDRAULIC MOTOR', pn: 'HYMO100003' },
+              { item: 30, idCode: 'MV1.MV12.00005', qty: 1, descIT: 'VALVOLA OVERCENTER', descEN: 'OVERCENTER VALVE MOVECO', pn: 'HYCB100008' },
+              { item: 31, idCode: 'B60.B603.00005', qty: 1, descIT: 'COPERCHIO PER PIGNONE CATENA', descEN: 'CHAIN PINION COVER', pn: '901-003' },
+              { item: 32, idCode: '400.4001.00001', qty: 1, descIT: 'CUSCINETTO A SFERE ORIENTABILI', descEN: 'ORIENTAL BALL BEARING', pn: '2204 E-2RS1' },
+              { item: 33, idCode: 'V56.D47', qty: 1, descIT: 'SEEGER PER INTERNI D47mm', descEN: 'INTERNAL CIRCLIP D47mm', pn: 'RNG-IN-47' },
+              { item: 34, idCode: 'B60.B603.00007', qty: 1, descIT: 'PIGNONE PER CATENA DA 1"', descEN: '1" CHAIN PINION', pn: '901-002' },
+              { item: 50, idCode: 'B60.B603.00008', qty: 1, descIT: 'KIT RULLO FOLLE 1"', descEN: 'ROLLER CHAIN KIT', pn: '—', special: true }]
+          },
+          {
+            id: 'C2065', drawing: 'DIS. 1000-365/0', type: 'COD.', title: 'FALCONE MODULARE SERIE 4', titleEN: 'Modular Derrick Series 4 — 140mm Wheel', group: 'MAST & CARRIAGE', parts: [
+              { item: 1, idCode: 'B50.B505.00041', qty: 1, descIT: 'PROLUNGA FALCONE L=350mm', descEN: 'EXTENSION FOR DERRICK L=350mm', pn: '1000-013' },
+              { item: 2, idCode: 'V30.M12X45', qty: 8, descIT: 'VITE T.E. M12X45', descEN: 'SCREW HEX HEAD M12X45', pn: 'SCR-HX-M12-45' },
+              { item: 3, idCode: 'B50.B505.00042', qty: 1, descIT: 'PROLUNGA FALCONE L=100mm', descEN: 'VARIABLE EXTENSION FOR DERRICK', pn: '1000-334' },
+              { item: 4, idCode: 'V40.M12X20', qty: 2, descIT: 'VITE T.C. M12X20', descEN: 'SCREW SOCKET HEAD M12X20', pn: 'SCR-SK-M12-20' },
+              { item: 5, idCode: 'B60.B615.00022', qty: 1, descIT: 'FLANGIA FISSA PER FALCONE', descEN: 'FIXED FLANGE', pn: '1000-309' },
+              { item: 6, idCode: 'V40.M14X30', qty: 4, descIT: 'VITE T.C. M14X30', descEN: 'SCREW SOCKET HEAD M14X30', pn: 'SCR-SK-M14-30' },
+              { item: 7, idCode: '500.5004.00047', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-4625' },
+              { item: 8, idCode: '400.4005.00001', qty: 1, descIT: 'GABBIA A RULLINI', descEN: 'RADIAL NEEDLE ROLLER BEARING', pn: 'BRRO200001' },
+              { item: 9, idCode: 'V50.10MB', qty: 2, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-GRS-100002' },
+              { item: 10, idCode: 'B60.B615.00023', qty: 1, descIT: 'FLANGIA MOBILE PER GIREVOLE', descEN: 'MOVABLE FLANGE', pn: '1000-310' },
+              { item: 11, idCode: '500.5004.00048', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-4150' },
+              { item: 12, idCode: 'B60.B615.00024', qty: 1, descIT: 'RONDELLA PER GIREVOLE', descEN: 'SWIVEL WASHER', pn: '1000-311' },
+              { item: 13, idCode: 'V20.M27XSTD', qty: 1, descIT: 'DADO AUTOBLOCCANTE M27x2', descEN: 'LOCK NUT M27x2', pn: 'NUT-LK-M27' },
+              { item: 14, idCode: 'B60.B615.00021', qty: 2, descIT: 'RULLO PER SCORRIMENTO FUNE', descEN: 'ROPE SLIDING ROLLER', pn: '1000-308' },
+              { item: 15, idCode: 'V30.M12X180', qty: 2, descIT: 'VITE T.E. M12X180', descEN: 'SCREW HEX HEAD M12X180', pn: 'SCR-HX-M12-180' },
+              { item: 16, idCode: 'B50.B505.00010', qty: 2, descIT: 'CONTENIMENTO PER RULLINI', descEN: 'CONTAINMENT OF ROLLERS', pn: '1000-302' },
+              { item: 17, idCode: 'B60.B615.00033', qty: 1, descIT: 'RUOTA PER FALCONE', descEN: 'DERRICK WHEEL', pn: '1000-319' },
+              { item: 18, idCode: 'B50.B505.00008', qty: 1, descIT: 'STRUTTURA DESTRA FALCONE', descEN: 'DERRICK STRUCTURE RIGHT', pn: '1000-301-1-A' },
+              { item: 19, idCode: 'V20.M12XSTD', qty: 15, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+              { item: 20, idCode: 'V20.M14XSTD', qty: 2, descIT: 'DADO AUTOBLOCCANTE M14', descEN: 'LOCK NUT M14', pn: 'NUT-LK-M14' },
+              { item: 21, idCode: 'B60.B615.00017', qty: 3, descIT: 'PERNO PER RUOTA DI NYLON', descEN: 'PIN FOR DERRICK ROLLER', pn: '1000-304' },
+              { item: 22, idCode: 'B60.B615.00019', qty: 4, descIT: 'RULLO PER SCORRIMENTO FUNE', descEN: 'ROPE SLIDING ROLLER', pn: '1000-306' },
+              { item: 23, idCode: 'B60.B615.00016', qty: 1, descIT: 'RUOTA PER FALCONE', descEN: 'DERRICK WHEEL', pn: '1000-303' },
+              { item: 24, idCode: 'B50.B505.00009', qty: 1, descIT: 'STRUTTURA SINISTRA FALCONE', descEN: 'DERRICK STRUCTURE LEFT', pn: '1000-301-1-B' },
+              { item: 25, idCode: 'V30.M12X90', qty: 2, descIT: 'VITE T.E. M12X90', descEN: 'SCREW HEX HEAD M12X90', pn: 'SCR-HX-M12-90' },
+              { item: 26, idCode: 'V40.M8X10', qty: 2, descIT: 'VITE T.C. M8X10', descEN: 'SCREW SOCKET HEAD M8X10', pn: 'SCR-SK-M8-10' },
+              { item: 27, idCode: 'V40.M12X30', qty: 10, descIT: 'VITE T.C. M12X30', descEN: 'SCREW SOCKET HEAD M12X30', pn: 'SCR-SK-M12-30' },
+              { item: 28, idCode: 'B50.B505.00011', qty: 1, descIT: 'CONTENIMENTO CAVO ELETTRICO', descEN: 'ELECTRIC CABLE CONTAINMENT', pn: '1000-313' },
+              { item: 29, idCode: 'V30.M12X110', qty: 2, descIT: 'VITE T.E. M12X110', descEN: 'SCREW HEX HEAD M12X110', pn: 'SCR-HX-M12-110' },
+              { item: 30, idCode: 'V30.M14X100', qty: 3, descIT: 'VITE T.E. M14X100', descEN: 'SCREW HEX HEAD M14X100', pn: 'SCR-HX-M14-100' }]
+          },
+          {
+            id: 'D1736', drawing: 'DIS. 850-100/0', type: 'COD.', title: 'MORSA DOPPIA DA 50-324mm', titleEN: 'Double Vice 50-324mm with Mobile Collar', group: 'VICE & CLAMP', parts: [
+              { item: 1, idCode: 'W2058', qty: 4, descIT: 'CILINDRO STANDARD SERRAGGIO DN90/60 C=177mm', descEN: 'CYLINDER DN90/60 C=177mm', pn: '630-000-177' },
+              { item: 2, idCode: 'V30.M12X55', qty: 16, descIT: 'VITE T.E. M12X55', descEN: 'SCREW HEX HEAD M12X55', pn: 'SCR-HX-M12-55' },
+              { item: 3, idCode: 'V40.M10X30', qty: 8, descIT: 'VITE T.C. M10X30', descEN: 'SCREW SOCKET HEAD M10X30', pn: 'SCR-SK-M10-30' },
+              { item: 4, idCode: 'B50.B506.00003', qty: 1, descIT: 'STRUTTURA MORSA FISSA DA 335 SERIE 4', descEN: 'FIXED VICE STRUCTURE 335', pn: '850-009' },
+              { item: 5, idCode: 'WA1.WA11.00008', qty: 2, descIT: 'VALVOLA DIVISORE DI FLUSSO VDFR 38-24', descEN: 'FLOW DIVIDER VALVE VDFR 38-24', pn: 'HYCH100003' },
+              { item: 6, idCode: 'V40.M6X90', qty: 2, descIT: 'VITE T.C. M6X90', descEN: 'SCREW SOCKET HEAD M6X90', pn: 'SCR-SK-M6-90' },
+              { item: 7, idCode: 'B60.B608.00008', qty: 1, descIT: 'COLLARE IMBULLONATO', descEN: 'BOLTED COLLAR', pn: '850-010' },
+              { item: 8, idCode: 'B50.B506.00005', qty: 1, descIT: "PIASTRA D'APPOGGIO", descEN: 'RAIL CHAIR', pn: '850-004' },
+              { item: 9, idCode: 'V30.M16X30', qty: 4, descIT: 'VITE T.E. M16X30', descEN: 'SCREW HEX HEAD M16X30', pn: 'SCR-HX-M16-30' },
+              { item: 10, idCode: 'WA1.WA11.00012', qty: 2, descIT: 'VALVOLA DI BLOCCO VBPSL 38 p4', descEN: 'CHECK VALVE 3/8', pn: 'HYCH100001' },
+              { item: 11, idCode: 'V40.M6X45', qty: 4, descIT: 'VITE T.C. M6X45', descEN: 'SCREW SOCKET HEAD M6X45', pn: 'SCR-SK-M6-45' },
+              { item: 12, idCode: '300.3004.00001', qty: 1, descIT: 'ACCUMULATORE AZOTO', descEN: 'ACCUMULATOR NITROGEN', pn: 'ACNI100001' },
+              { item: 13, idCode: 'V40.M10X25', qty: 1, descIT: 'VITE T.C. M10X25', descEN: 'SCREW SOCKET HEAD M10X25', pn: 'SCR-SK-M10-25' },
+              { item: 14, idCode: 'V30.M10X30', qty: 8, descIT: 'VITE T.E. M10X30', descEN: 'SCREW HEX HEAD M10X30', pn: 'SCR-HX-M10-30' },
+              { item: 15, idCode: 'B60.B608.00002', qty: 2, descIT: 'FLANGIA PER CILINDRO SVITATORE', descEN: 'FLANGE UNSCREWING CYLINDER', pn: '273-006' },
+              { item: 16, idCode: 'V55.D30', qty: 2, descIT: 'SEEGER PER ALBERO D30mm', descEN: 'EXTERNAL RING D30mm', pn: 'RNG-EX-30' },
+              { item: 17, idCode: 'B60.B608.00003', qty: 1, descIT: 'PERNO PER ATTACCO SVITATORE', descEN: 'UNSCREWING CYLINDER PIN', pn: '240-060' },
+              { item: 18, idCode: 'W2059', qty: 1, descIT: 'CILINDRO SVITATORE DN80/45 C=65mm', descEN: 'CYLINDER DN80/45 C=65mm', pn: '626-000-65' },
+              { item: 19, idCode: 'V30.M12X30', qty: 15, descIT: 'VITE T.E. M12X30', descEN: 'SCREW HEX HEAD M12X30', pn: 'SCR-HX-M12-30' },
+              { item: 20, idCode: 'V30.M12X40', qty: 8, descIT: 'VITE T.E. M12X40', descEN: 'SCREW HEX HEAD M12X40', pn: 'SCR-HX-M12-40' },
+              { item: 21, idCode: 'V50.10MB', qty: 6, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-STR-100001' },
+              { item: 22, idCode: 'V20.M12XSTD', qty: 20, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+              { item: 23, idCode: 'V30.M12X100', qty: 4, descIT: 'VITE T.E. M12X100', descEN: 'SCREW HEX HEAD M12X100', pn: 'SCR-HX-M12-100' },
+              { item: 24, idCode: 'B60.B608.00009', qty: 4, descIT: 'PORTA GRIFFE MORSA 335', descEN: 'JAW BLOCK 335', pn: '820-010' },
+              { item: 25, idCode: 'B60.B608.00001', qty: 8, descIT: 'GRIFFA DI SERRAGGIO', descEN: 'JAW', pn: '251-065' },
+              { item: 26, idCode: 'B50.B506.00004', qty: 1, descIT: 'STRUTTURA SVITATORE 335 SERIE 4', descEN: 'UNSCREWER VICE STRUCTURE 335', pn: '850-012' },
+              { item: 27, idCode: 'B60.B608.00010', qty: 1, descIT: 'FLANGIA IMBULLONATA PER SVITATORE 335', descEN: 'BOLTED FLANGE FOR UNSCREWING 335', pn: '850-011' },
+              { item: 28, idCode: 'V40.M12X40', qty: 7, descIT: 'VITE T.C. M12X40', descEN: 'SCREW SOCKET HEAD M12X45', pn: 'SCR-SK-M12-45' },
+              { item: 29, idCode: 'B60.B608.00011', qty: 1, descIT: 'RALLA GUIDA PER MORSA 335', descEN: '335 VICE BEARING DISC GUIDE', pn: '850-013' },
+              { item: 50, idCode: '500.5009.00003', qty: 4, descIT: 'KIT DI GUARNIZIONI DN90/60', descEN: 'SEAL KIT DN90/60', pn: '—', special: true },
+              { item: 60, idCode: '500.5009.00002', qty: 1, descIT: 'KIT DI GUARNIZIONI DN80/45', descEN: 'SEAL KIT DN80/45', pn: '—', special: true }]
+          },
+          {
+            id: 'E2040', drawing: 'DIS. 446-240/0', type: 'COD.', title: 'EQUIP. GRUPPO PORTA SONDA', titleEN: 'Drill Tower Group Equipment — T46', group: 'DRILL TOWER', parts: [
+              { item: 1, idCode: 'B60.B606.00016', qty: 1, descIT: 'RALLA PER TORRETTA', descEN: 'BEARING DISC FOR TURRET', pn: '240-004' },
+              { item: 2, idCode: '500.5004.00049', qty: 1, descIT: 'GUARNIZIONE OR SPECIALE 3.35 L=1516', descEN: 'SPECIAL ORING SEAL', pn: 'SLOR-SP009' },
+              { item: 3, idCode: 'V50.10MB', qty: 18, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-GRS-100002' },
+              { item: 4, idCode: '500.5004.00050', qty: 1, descIT: 'GUARNIZIONE OR SPECIALE 3.53 L=1100', descEN: 'SPECIAL ORING SEAL', pn: 'SLOR-SP010' },
+              { item: 5, idCode: 'B60.B606.00001', qty: 1, descIT: 'FLANGIA PER FISSAGGIO RALLA', descEN: 'FLANGE FIXING BEARING DISC', pn: '240-005' },
+              { item: 6, idCode: 'V30.M16X70', qty: 16, descIT: 'VITE T.E. M16X70', descEN: 'SCREW HEX HEAD M16X70', pn: 'SCR-HX-M16-70' },
+              { item: 7, idCode: 'B50.B503.00064', qty: 1, descIT: 'TORRETTA PORTA SONDA', descEN: 'TURRET BRINGS BORE', pn: '446-002-1' },
+              { item: 8, idCode: 'V35.M16X60', qty: 12, descIT: 'VITE T.E. M16X60 10.9', descEN: 'SCREW HEX HEAD M16X60 10.9', pn: 'SCR-HX-M16-60 10.9' },
+              { item: 9, idCode: 'B60.B606.00169', qty: 1, descIT: 'PERNO D40 L=173', descEN: 'PIN D40 L=173', pn: '446-014' },
+              { item: 10, idCode: 'V55.D40', qty: 2, descIT: 'ANELLO ELASTICO SEEGER D40mm', descEN: 'EXTERNAL RING D40mm', pn: 'RNG-EX-40' },
+              { item: 11, idCode: 'W2117', qty: 1, descIT: 'CILINDRO DN100/56 C=140mm', descEN: 'CYLINDER DN100/56 C=140mm', pn: '616-000-275' },
+              { item: 12, idCode: 'B50.B503.00001', qty: 1, descIT: 'BRACCIO PER SNODO', descEN: 'ARM FOR PIVOT', pn: '446-003-1' },
+              { item: 13, idCode: 'B60.B606.00168', qty: 1, descIT: 'PERNO D40 L=306', descEN: 'PIN D40 L=306', pn: '446-013-1' },
+              { item: 14, idCode: '', qty: 1, descIT: 'COPIGLIA', descEN: 'SPLIT PIN LOCKING', pn: 'PIN-6-40' },
+              { item: 15, idCode: 'W2120', qty: 1, descIT: 'CILINDRO DN 65/36 C=500mm', descEN: 'CYLINDER DN 65/36 C=500mm', pn: '613-000-500' },
+              { item: 16, idCode: 'V55.D30', qty: 3, descIT: 'SEEGER PER ALBERO D30mm', descEN: 'EXTERNAL RING D30mm', pn: 'RNG-EX-30' },
+              { item: 17, idCode: 'B60.B606.00079', qty: 2, descIT: 'PERNO PER CILINDRO', descEN: 'CYLINDER PIN', pn: '200-010' },
+              { item: 18, idCode: 'B60.B606.00091', qty: 1, descIT: 'PERNO PER ROTAZIONE TORRETTA', descEN: 'PIN', pn: '240-007' },
+              { item: 19, idCode: 'B60.B606.00006', qty: 1, descIT: 'PERNO D50 L=403', descEN: 'PIN D50 L=403', pn: '446-008-1' },
+              { item: 20, idCode: '', qty: 1, descIT: 'VALVOLA CONTROBILANCIAMENTO', descEN: 'COUNTERBALANCE VALVE', pn: 'HYCB100002' },
+              { item: 21, idCode: 'B60.B606.00007', qty: 2, descIT: 'RONDELLA', descEN: 'WASHER', pn: '446-015-D' },
+              { item: 22, idCode: 'B60.B606.00005', qty: 2, descIT: 'RONDELLA', descEN: 'WASHER', pn: '446-015-B' },
+              { item: 23, idCode: 'V25.M40X1.5', qty: 2, descIT: 'GHIERA M40x1.5', descEN: 'BUSH M40x1.5', pn: 'GH-M40x1.5' },
+              { item: 24, idCode: 'V55.D35', qty: 2, descIT: 'SEEGER ESTERNO 35', descEN: 'EXTERNAL CIRCLIP 35', pn: 'RNG-EX-35' },
+              { item: 25, idCode: 'W2073', qty: 2, descIT: 'CILINDRO DN80/45 C=480mm', descEN: 'CYLINDER DN80/45 C=480mm', pn: '615-006-480' },
+              { item: 26, idCode: 'B60.B606.00003', qty: 1, descIT: 'PERNO D50 L=293', descEN: 'PIN D50 L=293', pn: '446-010' },
+              { item: 27, idCode: 'V40.M8X16', qty: 2, descIT: 'VITE T.C. M8X16', descEN: 'SCREW SOCKET HEAD M8x16', pn: 'SCR-SK-M8-16' },
+              { item: 28, idCode: 'B60.B606.00009', qty: 2, descIT: 'PERNO D35 L=137', descEN: 'PIN D35 L=137', pn: '446-009' },
+              { item: 29, idCode: 'B50.B503.00062', qty: 1, descIT: 'SNODO CENTRALE', descEN: 'CENTRAL PIVOT', pn: '446-003-1' },
+              { item: 30, idCode: 'IM2.IM20.00006', qty: 1, descIT: 'RALLA 360°', descEN: 'SLEWING DRIVE', pn: 'SLDR100001' },
+              { item: 31, idCode: 'B60.B606.00004', qty: 2, descIT: 'RONDELLA', descEN: 'WASHER', pn: '446-015-C' },
+              { item: 32, idCode: 'V45.M16X70', qty: 26, descIT: 'VITE T.C. M16X70-12K', descEN: 'SCREW SOCKET HEAD M16X70-12K', pn: 'SCR-SK-M16-70-12K' },
+              { item: 33, idCode: 'MS1.MS11.00001', qty: 1, descIT: 'VALVOLA DI BLOCCO MS KPBR 250 1D3', descEN: 'STOP VALVE MS KPBR 250 1D3', pn: 'HYCB100006' },
+              { item: 34, idCode: 'MS1.MS10.00024', qty: 1, descIT: 'MOTORE MR315 con FRENO', descEN: 'MR 315 MOTOR', pn: 'HYMO100016' },
+              { item: 35, idCode: 'V40.M12X35', qty: 2, descIT: 'VITE T.C. M12X35', descEN: 'SCREW SOCKET HEAD M12X35', pn: 'SCR-SK-M12-35' },
+              { item: 36, idCode: 'B60.B606.00032', qty: 1, descIT: 'DISTANZIALE RALLA-CONTROSLITTA', descEN: 'BEARING-DRILLING COUNTERMAST SPACER', pn: '326-003-1' },
+              { item: 37, idCode: 'V45.M16X50', qty: 4, descIT: 'VITE T.C. M16X50-12K', descEN: 'SCREW SOCKET HEAD M16X50-12K', pn: 'SCR-SK-M16-50-12K' },
+              { item: 38, idCode: 'B50.B503.00024', qty: 1, descIT: 'CONTROSLITTA', descEN: 'DRILLING COUNTERMAST', pn: '240-158-1' },
+              { item: 39, idCode: 'B60.B606.00039', qty: 1, descIT: 'GUIDA LUNGA DESTRA', descEN: 'LONG RIGHT SLIDE', pn: '240-054-B' },
+              { item: 40, idCode: 'V30.M10X30', qty: 4, descIT: 'VITE T.E. M10X30', descEN: 'SCREW HEX HEAD M10X30', pn: 'SCR-HX-M10-30' },
+              { item: 41, idCode: 'B50.B501.00247', qty: 3, descIT: 'FERMO PER PASSAPARETE', descEN: 'STOP BULKHEAD', pn: '315-346-1' },
+              { item: 42, idCode: 'V40.M6X20', qty: 6, descIT: 'VITE T.C. M6X20', descEN: 'SCREW SOCKET HEAD M6X20', pn: 'SCR-SK-M6-20' },
+              { item: 43, idCode: 'B50.B501.00218', qty: 1, descIT: 'PORTA CATENARIA SU CONTROSLITTA', descEN: 'BULKHEAD ON COUNTERMAST', pn: '220-200' },
+              { item: 44, idCode: 'BS1.BS10.00007', qty: 1, descIT: 'ATTACCO DESTRO PER CATENARIA', descEN: 'RIGHT CATENARY FASTENING', pn: 'CHPL100004' },
+              { item: 45, idCode: 'BS1.BS10.00006', qty: 1, descIT: 'ATTACCO SINISTRO PER CATENARIA', descEN: 'LEFT CATENARY FASTENING', pn: 'CHPL100003' },
+              { item: 46, idCode: 'B60.B606.00038', qty: 4, descIT: 'GUIDA CORTA', descEN: 'SHORT SLIDE', pn: '240-054-A' },
+              { item: 47, idCode: 'B50.B503.00063', qty: 1, descIT: 'FORCELLA', descEN: 'FORK', pn: '446-018-3' },
+              { item: 48, idCode: 'W2064', qty: 1, descIT: 'CILINDRO DN50/36 C=405mm', descEN: 'CYLINDER DN50/36 C=405mm', pn: '611-000-405' },
+              { item: 49, idCode: 'V30.M12X50', qty: 20, descIT: 'VITE T.E. M12X50', descEN: 'SCREW HEX HEAD M12X50', pn: 'SCR-HX-M12-50' },
+              { item: 50, idCode: 'V20.M12XSTD', qty: 19, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+              { item: 51, idCode: 'B60.B606.00033', qty: 1, descIT: 'PERNO PER CILINDRO', descEN: 'CYLINDER PIN', pn: '200-011' },
+              { item: 52, idCode: 'B60.B606.00035', qty: 2, descIT: 'COPERCHIO PER PERNO', descEN: 'PIN COVER', pn: '240-159' },
+              { item: 53, idCode: 'B60.B606.00040', qty: 1, descIT: 'GUIDA LUNGA SINISTRA', descEN: 'LEFT LONG SLIDE', pn: '240-054-C' },
+              { item: 54, idCode: 'V35.M16X50', qty: 12, descIT: 'VITE T.E. M16X50 10.9', descEN: 'SCREW HEX HEAD M16X50 10.9', pn: 'SCR-HX-M16-50 10.9' },
+              { item: 60, idCode: '500.5009.00008', qty: 1, descIT: 'KIT DI GUARNIZIONI DN65/36', descEN: 'SEAL KIT DN65/36', pn: '—', special: true },
+              { item: 70, idCode: '500.5009.00012', qty: 1, descIT: 'KIT DI GUARNIZIONI DN100/56', descEN: 'SEAL KIT DN100/56', pn: '—', special: true },
+              { item: 80, idCode: '500.5009.00002', qty: 2, descIT: 'KIT DI GUARNIZIONI DN80/45', descEN: 'SEAL KIT DN80/45', pn: '—', special: true },
+              { item: 90, idCode: '500.5009.00007', qty: 1, descIT: 'KIT DI GUARNIZIONI DN50/36', descEN: 'SEAL KIT DN50/36', pn: '—', special: true }]
+          },
+          {
+            id: 'G2052', drawing: 'DIS. 446-245/0', type: 'COD.', title: 'EQUIP. GRUPPO TELAIO CON MOTORE DEUTZ', titleEN: 'Chassis Group Equipment — Deutz Engine', group: 'CHASSIS & ENGINE', parts: [
+              { item: 1, idCode: 'V50.10MB', qty: 2, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-GRS-100002' },
+              { item: 2, idCode: 'B60.B606.00017', qty: 2, descIT: 'PERNO PER BLOCCAGGIO STABILIZZATORE', descEN: 'PIN', pn: '251-057' },
+              { item: 3, idCode: 'B50.B502.00003', qty: 5, descIT: 'MORSETTO CHIUSURA STABILIZZATORE', descEN: 'STABILIZER HYDRAULIC CYLINDER', pn: '369-003-A' },
+              { item: 4, idCode: 'V30.M12X45', qty: 30, descIT: 'VITE T.E. M12X45', descEN: 'SCREW HEX HEAD M12X45', pn: 'SCR-HX-M12-45' },
+              { item: 5, idCode: 'B50.B501.00001', qty: 2, descIT: 'BRACCIO STABILIZZATORE ANTERIORE', descEN: 'FRONT STABILIZER ARM', pn: '446-017' },
+              { item: 6, idCode: 'V30.M16X40', qty: 8, descIT: 'VITE T.E. M16X40', descEN: 'SCREW HEX HEAD M16X40', pn: 'SCR-HX-M16-40' },
+              { item: 7, idCode: 'B60.B606.00047', qty: 2, descIT: 'RONDELLA STABILIZZATORE', descEN: 'STABILIZER WASHER', pn: '305-021' },
+              { item: 8, idCode: 'V20.M12XSTD', qty: 31, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+              { item: 9, idCode: 'B60.B606.00173', qty: 2, descIT: 'PERNO PER BRACCIO STABILIZZATORE', descEN: 'PIN FOR STABILIZER ARM', pn: '305-020' },
+              { item: 10, idCode: 'V30.M20X80', qty: 8, descIT: 'VITE T.E. M20X80', descEN: 'SCREW HEX HEAD M20X80', pn: 'SCR-HX-M20-80' },
+              { item: 11, idCode: 'SM2.SM20.00003', qty: 1, descIT: 'SOTTOCARRO ALLARGABILE 1000-1400', descEN: 'VARIABLE UNDERTRACK 1000-1400', pn: '446-072-1' },
+              { item: 12, idCode: 'B50.B501.00500', qty: 1, descIT: 'TELAIO', descEN: 'CHASSIS', pn: '446-118-2' },
+              { item: 13, idCode: 'WA1.WA10.00006', qty: 1, descIT: 'DISTRIBUTORE COMANDI SD6/11', descEN: 'DISTRIBUTOR SD6/11', pn: 'SD6-11' },
+              { item: 14, idCode: 'B50.B501.00506', qty: 1, descIT: 'MENSOLA PORTA DISTRIBUTORE COMANDI', descEN: 'BRACKET BRINGS COMMANDS DISTRIBUTOR', pn: '446-055-1' },
+              { item: 15, idCode: 'WA1.WA10.00008', qty: 1, descIT: 'DISTRIBUTORE PER CINGOLO', descEN: 'TRACK DISTRIBUTOR', pn: 'SD6-2' },
+              { item: 16, idCode: 'V30.M10X16', qty: 16, descIT: 'VITE T.E. M10X16', descEN: 'SCREW HEX HEAD M10X16', pn: 'SCR-HX-M10-16' },
+              { item: 17, idCode: 'B50.B501.00502', qty: 1, descIT: 'LAMIERA PER ARIA MOTORE', descEN: 'AIR MOTOR SHEET METAL', pn: '446-118-B' },
+              { item: 18, idCode: 'B50.B502.00024', qty: 2, descIT: 'BRACCIO POSTERIORE STABILIZZATORE', descEN: 'REAR STABILIZER ARM', pn: '446-119' },
+              { item: 19, idCode: 'B50.B517.00014', qty: 1, descIT: 'PORTA RADIATORE POSTERIORE', descEN: 'REAR RADIATOR SUPPORT', pn: '446-199' },
+              { item: 20, idCode: 'V30.M10X35', qty: 4, descIT: 'VITE T.E. M10X35', descEN: 'SCREW HEX HEAD M10X35', pn: 'SCR-HX-M10-35' },
+              { item: 21, idCode: 'V30.M16X50', qty: 14, descIT: 'VITE T.E. M16X50', descEN: 'SCREW HEX HEAD M16X50', pn: 'SCR-HX-M16-50' },
+              { item: 22, idCode: 'B50.B501.00509', qty: 1, descIT: 'PIANTANA POSTERIORE', descEN: 'REAR PEDESTAL', pn: '446-165' },
+              { item: 23, idCode: 'V30.M12X30', qty: 4, descIT: 'VITE T.E. M12X30', descEN: 'SCREW HEX HEAD M12X30', pn: 'SCR-HX-M12-30' },
+              { item: 41, idCode: 'DE2.DE20.00001', qty: 1, descIT: 'MOTORE TD2.9 STAGE 5', descEN: 'ENGINE TD2.9 STAGE 5', pn: 'ENGI100005' },
+              { item: 43, idCode: 'EM1.EM10.00004', qty: 1, descIT: 'RADIATORE 2030K CON PIEDINI', descEN: '2030K RADIATOR WITH FOOT', pn: 'RDT-2030K+P' },
+              { item: 47, idCode: 'W1240', qty: 4, descIT: 'CILINDRO STABILIZZATORE DN65/45 C=470mm', descEN: 'CYLINDER STABILIZER DN65/45 C=470mm', pn: '621-000-470' },
+              { item: 57, idCode: 'M10.M102.00001', qty: 1, descIT: 'PULSANTE EMERGENZA', descEN: 'EMERGENCY STOP SWITCH', pn: 'ELSW200001' },
+              { item: 74, idCode: 'FW1.FW12.00001', qty: 1, descIT: 'BLOCCO DI SICUREZZA CON Y10', descEN: 'SAFETY MANIFOLD', pn: 'HYCH100007' },
+              { item: 90, idCode: '500.5009.00001', qty: 4, descIT: 'KIT DI GUARNIZIONI DN65/45', descEN: 'SEAL KIT DN65/45', pn: '—', special: true }]
+          },
+          {
+            id: 'G1080', drawing: 'DIS. 446-042/0', type: 'COD.', title: 'PANNELLO PORTA COMANDI', titleEN: 'Control Panel without Cage — T46', group: 'CONTROLS', parts: [
+              { item: 1, idCode: 'V30.M16X40', qty: 4, descIT: 'VITE T.E. M16X40', descEN: 'SCREW HEX HEAD M16X40', pn: 'SCR-HX-M16-40' },
+              { item: 2, idCode: 'B50.B508.00002', qty: 1, descIT: 'PERNO PER FISS. BRACCIO COMANDI', descEN: 'CONTROL ARM FIXING PIN', pn: '446-036-1' },
+              { item: 11, idCode: 'WA1.WA10.00015', qty: 2, descIT: 'DISTRIBUTORE SD14/1', descEN: 'SD14/1 DISTRIBUTOR', pn: 'SD14-1' },
+              { item: 12, idCode: 'WA1.WA10.00018', qty: 1, descIT: 'DISTRIBUTORE SD11/3', descEN: 'SD11/3 DISTRIBUTOR', pn: 'SD11-3' },
+              { item: 14, idCode: 'WA1.WA10.00004', qty: 1, descIT: 'DISTRIBUTORE SD5/6', descEN: 'SD5/6 DISTRIBUTOR', pn: 'SD5-6' },
+              { item: 18, idCode: 'M10.M102.00001', qty: 1, descIT: 'PULSANTE EMERGENZA', descEN: 'EMERGENCY STOP SWITCH', pn: 'ELSW200001' },
+              { item: 19, idCode: '300.3007.00001', qty: 4, descIT: 'MANOMETRO OLEOIDRAULICO', descEN: 'HYDRAULIC GAUGE', pn: 'HYGA100001' },
+              { item: 21, idCode: 'WA1.WA11.00001', qty: 1, descIT: 'VALVOLA REGOLATORE DI PRESSIONE', descEN: 'HYDRAULIC CHECK VALVE', pn: 'HYCH100006' },
+              { item: 24, idCode: 'B50.B508.00007', qty: 1, descIT: 'PROTEZIONE LEVE COMANDI', descEN: 'COMMANDS LEVERS PROTECTION', pn: '446-023-1' }]
+          },
+          {
+            id: 'L2043', drawing: 'DIS. 446-242/0', type: 'COD.', title: "EQUIP. SERBATOIO DELL'OLIO CON DEUTZ", titleEN: 'Hydraulic Oil Tank Equipment — Deutz', group: 'HYDRAULIC SYSTEM', parts: [
+              { item: 1, idCode: '300.3001.00006', qty: 1, descIT: 'FILTRO OLIO RITORNO', descEN: 'RETURN OIL FILTER', pn: 'HYFI200002' },
+              { item: 3, idCode: '300.3001.00005', qty: 1, descIT: 'CARTUCCIA HHC01329', descEN: 'CARTRIDGE HHC01329', pn: 'HYFI100009' },
+              { item: 5, idCode: '300.3003.00001', qty: 1, descIT: 'TAPPO RIEMPIMENTO', descEN: 'OIL TANK CAP', pn: 'HYAC100002' },
+              { item: 7, idCode: '300.3003.00002', qty: 1, descIT: 'INDICATORE LIVELLO E TEMPERATURA OLIO', descEN: 'OIL TEMPERATURE LEVEL', pn: 'HYAC100001' },
+              { item: 8, idCode: 'B50.B513.00016', qty: 1, descIT: "SERBATOIO DELL'OLIO", descEN: 'OIL TANK', pn: '446-064-1' },
+              { item: 10, idCode: '300.3001.00010', qty: 4, descIT: 'FILTRO ASPIRAZIONE', descEN: 'SUCTION STRAINER', pn: 'HYFI100008' },
+              { item: 13, idCode: 'M10.M102.00016', qty: 1, descIT: 'SEMAFORO', descEN: 'SEMAPHORE INDICATOR', pn: 'ELLI100004' },
+              { item: 14, idCode: 'M10.M105.00001', qty: 1, descIT: 'PANNELLO ACCENSIONE', descEN: 'ENGINE START BOX', pn: 'ENGI100005-5' }]
+          },
+          {
+            id: 'L2045', drawing: 'DIS. 315-398/0', type: 'COD.', title: 'EQUIP. SERBATOIO GASOLIO CON APV21', titleEN: 'Diesel Tank Equipment with APV21', group: 'HYDRAULIC SYSTEM', parts: [
+              { item: 1, idCode: 'B50.B514.00012', qty: 1, descIT: 'SERBATOIO DEL GASOLIO', descEN: 'DIESEL TANK', pn: '315-027-2' },
+              { item: 2, idCode: '350.3501.00001', qty: 1, descIT: 'TAPPO GASOLIO M80x2', descEN: 'PLUG CAP M80x2', pn: 'FA-CAP-100001' },
+              { item: 4, idCode: 'B50.B501.00499', qty: 1, descIT: 'CARTER PER SCATOLA ELETTRICA', descEN: 'ELECTRIC BOX COVER', pn: '446-168' },
+              { item: 6, idCode: '', qty: 1, descIT: 'SCATOLA ELETTRICA APV21', descEN: 'ELECTRIC BOX APV21', pn: 'ELBX100004' }]
+          },
+          {
+            id: 'S2054', drawing: 'DIS. 515-500/0', type: 'COD.', title: 'KIT FUNE EMERGENZA PER SLITTA 120x120', titleEN: 'Emergency Cable Kit for Mast 120x120', group: 'SAFETY', parts: [
+              { item: 1, idCode: 'B50.B504.00062', qty: 1, descIT: 'SUPPORTO ANT. EMERGENZA CON FILO', descEN: 'EMERGENCY FRONT SUPPORT', pn: '358-108-B-1' },
+              { item: 2, idCode: 'M10.M102.00002', qty: 1, descIT: "DISPOSITIVO ARRESTO D'EMERGENZA", descEN: 'EMERGENCY STOP DEVICE', pn: 'ELSF1001' },
+              { item: 4, idCode: '', qty: 1, descIT: "FUNE D'EMERGENZA", descEN: 'EMERGENCY CABLE', pn: 'ELSF1005' },
+              { item: 6, idCode: 'M10.M102.00006', qty: 1, descIT: 'MOLLA PER CORDINA', descEN: 'CORD SPRING', pn: 'ELSF1002' },
+              { item: 8, idCode: 'B50.B504.00061', qty: 1, descIT: 'SUPPORTO POST. EMERGENZA CON FILO', descEN: 'EMERGENCY REAR SUPPORT', pn: '358-108-A-1' },
+              { item: 10, idCode: 'M10.M102.00008', qty: 1, descIT: 'KIT FUNE EMERGENZA', descEN: 'KIT MICRO EMERGENCY ROPE', pn: '—', special: true }]
+          },
+          {
+            id: 'E1037', drawing: 'H44 =', type: 'COD.', title: 'CARRELLO CINGOLATO ALLARGABILE T44', titleEN: 'Adjustable-Width Tracked Carriage for T44', group: 'UNDERCARRIAGE', parts: [
+              { item: 1, idCode: '', qty: 1, descIT: 'STRUTTURA DEL CARRO CINGOLATO', descEN: 'CRAWLER CARRIER STRUCTURE', pn: '—' },
+              { item: 3, idCode: '', qty: 1, descIT: 'CILINDRO IDRAULICO MODIFICA CARREGGIATA', descEN: 'HYDRAULIC CYLINDER FOR TRACK-GAUGE', pn: '—' },
+              { item: 10, idCode: '', qty: 1, descIT: 'RUOTA TENDICINGOLO', descEN: 'TRACK IDLER', pn: '—' },
+              { item: 11, idCode: '', qty: 1, descIT: 'MOTORE IDRAULICO', descEN: 'HYDRAULIC MOTOR', pn: '—' },
+              { item: 13, idCode: '', qty: 1, descIT: 'RIDUTTORE', descEN: 'REDUCTION GEAR', pn: '—' },
+              { item: 14, idCode: '', qty: 1, descIT: 'RUOTA DENTATA', descEN: 'SPROCKET WHEEL', pn: '—' },
+              { item: 18, idCode: '', qty: 1, descIT: 'RULLO INFERIORE', descEN: 'LOWER ROLLER', pn: '—' },
+              { item: 22, idCode: '', qty: 1, descIT: 'CINGOLO IN GOMMA', descEN: 'RUBBER TRACK', pn: '—' },
+              { item: 50, idCode: '', qty: 1, descIT: 'MAGLIA PER CINGOLO IN ACCIAIO', descEN: 'SHOE FOR STEEL TRACK', pn: '—' }]
+          }
+        ]
+      }, {
+        id: 'T19', sn: '—', year: '—', engine: '—', assemblies: [
+          {
+            id: 'T19-001', drawing: 'TBD', type: 'COD.', title: 'T19 — DATI IN CORSO DI INSERIMENTO', titleEN: 'T19 — Data entry in progress', group: 'GENERAL', parts: [
+              { item: 1, idCode: '', qty: 1, descIT: 'Caricare il manuale del T19 per popolare questa sezione', descEN: 'Load T19 manual to populate this section', pn: '—' }]
+          }
+        ]
+      }]
+    };
+
+    const GROUPS = {
+      'ROTARY HEAD ASSEMBLY': { icon: '⚙', color: '#f59e0b' },
+      'MAST & CARRIAGE': { icon: '↕', color: '#3b82f6' },
+      'VICE & CLAMP': { icon: '🔩', color: '#8b5cf6' },
+      'DRILL TOWER': { icon: '⬆', color: '#06b6d4' },
+      'CHASSIS & ENGINE': { icon: '🔧', color: '#10b981' },
+      'HYDRAULIC SYSTEM': { icon: '💧', color: '#0ea5e9' },
+      'CONTROLS': { icon: '🎮', color: '#f97316' },
+      'SAFETY': { icon: '⚠', color: '#ef4444' },
+      'UNDERCARRIAGE': { icon: '▣', color: '#6b7a88' },
+      'GENERAL': { icon: '📋', color: '#6b7a88' }
+    };
+
+    // ─────────────────────────────────────────────────────────────
+    // UTILITY COMPONENTS
+    // ─────────────────────────────────────────────────────────────
+    function HL({ text, q }) {
+      if (!q || !text) return text;
+      const i = text.toLowerCase().indexOf(q.toLowerCase());
+      if (i < 0) return text;
+      return ce('span', null, text.slice(0, i), ce('mark', null, text.slice(i, i + q.length)), text.slice(i + q.length));
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // RESIZE HANDLE
+    // ─────────────────────────────────────────────────────────────
+    function ResizeH({ onDrag }) {
+      const dragging = useRef(false);
+      function onDown(ev) {
+        ev.preventDefault();
+        dragging.current = true;
+        document.body.classList.add('resizing');
+        function onMove(ev) { if (dragging.current) onDrag(ev.clientY); }
+        function onUp() { dragging.current = false; document.body.classList.remove('resizing'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      }
+      return ce('div', { className: 'resize-handle-h', onMouseDown: onDown, title: 'Drag to resize' });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // DIAGRAM PANEL — PDF/Image loader + hotspot editor
+    // ─────────────────────────────────────────────────────────────
+    function DiagramPanel({ assembly, allHotspots, onHotspotsChange, selectedPart, onPartSelect, height }) {
+      const [imgSrc, setImgSrc] = useState(null);
+      const [natW, setNatW] = useState(1000);
+      const [natH, setNatH] = useState(750);
+      const [zoom, setZoom] = useState(1.0);
+      const [editMode, setEditMode] = useState(false);
+      const [pdfRef, setPdfRef] = useState(null);
+      const [pdfPage, setPdfPage] = useState(1);
+      const [pdfPages, setPdfPages] = useState(0);
+      const [loading, setLoading] = useState(false);
+      const fileRef = useRef(null);
+      const importRef = useRef(null);
+      const canvasRef = useRef(null);
+      const wrapperRef = useRef(null);
+      const asmId = assembly?.id;
+      const asmHS = useMemo(() => allHotspots[asmId] || [], [allHotspots, asmId]);
+
+      // Load saved image when assembly changes
+      useEffect(() => {
+        if (!asmId) { setImgSrc(null); return; }
+        try {
+          const s = localStorage.getItem('brt_img_' + asmId);
+          if (s) {
+            setImgSrc(s);
+            const tmp = new Image();
+            tmp.onload = () => { setNatW(tmp.naturalWidth); setNatH(tmp.naturalHeight); };
+            tmp.src = s;
+          } else { setImgSrc(null); }
+        } catch { setImgSrc(null); }
+        setEditMode(false);
+      }, [asmId]);
+
+      async function handleFile(ev) {
+        const file = ev.target.files[0];
+        if (!file) return;
+        setLoading(true);
+        try {
+          if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = re => {
+              const src = re.target.result;
+              const tmp = new Image();
+              tmp.onload = () => { setNatW(tmp.naturalWidth); setNatH(tmp.naturalHeight); setImgSrc(src); setLoading(false); };
+              tmp.src = src;
+              try { localStorage.setItem('brt_img_' + asmId, src); } catch { console.warn('Image too large for localStorage'); }
+            };
+            reader.readAsDataURL(file);
+          } else if (file.type === 'application/pdf' && window.pdfjsLib) {
+            const buf = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+            setPdfRef(pdf); setPdfPages(pdf.numPages); setPdfPage(1);
+            await doRenderPage(pdf, 1);
+            setLoading(false);
+          } else { setLoading(false); alert('Supported formats: PNG, JPG, GIF, PDF'); }
+        } catch (err) { setLoading(false); console.error(err); alert('Error: ' + err.message); }
+        ev.target.value = '';
+      }
+
+      async function doRenderPage(pdf, page) {
+        if (!canvasRef.current) return;
+        const p = await pdf.getPage(page);
+        const vp = p.getViewport({ scale: 1.8 });// Render at higher res for quality
+        const cv = canvasRef.current;
+        cv.width = vp.width; cv.height = vp.height;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+        await p.render({ canvasContext: ctx, viewport: vp }).promise;
+        const src = cv.toDataURL('image/jpeg', 0.85);
+        setImgSrc(src); setNatW(vp.width); setNatH(vp.height);
+        try { localStorage.setItem('brt_img_' + asmId, src); } catch { }
+      }
+
+      async function navPage(dir) {
+        if (!pdfRef) return;
+        const next = Math.max(1, Math.min(pdfPages, pdfPage + dir));
+        if (next === pdfPage) return;
+        setPdfPage(next); setLoading(true);
+        await doRenderPage(pdfRef, next);
+        setLoading(false);
+      }
+
+      function handleImgLoad(ev) { setNatW(ev.target.naturalWidth); setNatH(ev.target.naturalHeight); }
+
+      // ── PLACE HOTSPOT ON CLICK ──
+      function handleDiagClick(ev) {
+        if (!editMode || !imgSrc || !wrapperRef.current) return;
+        ev.stopPropagation();
+        if (selectedPart === null) return;
+        const rect = wrapperRef.current.getBoundingClientRect();
+        const nx = (ev.clientX - rect.left) / rect.width;
+        const ny = (ev.clientY - rect.top) / rect.height;
+        if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+        const newHS = { id: Date.now(), partItem: selectedPart, nx, ny };
+        // Replace existing hotspot for same part (one hotspot per part item)
+        const updated = { ...allHotspots, [asmId]: [...asmHS.filter(h => h.partItem !== selectedPart), newHS] };
+        onHotspotsChange(updated);
+      }
+
+      function removeHS(id, ev) {
+        ev.stopPropagation();
+        onHotspotsChange({ ...allHotspots, [asmId]: asmHS.filter(h => h.id !== id) });
+      }
+
+      function clearHS() {
+        if (asmHS.length === 0) return;
+        if (!confirm('Clear all hotspots for assembly ' + asmId + '?')) return;
+        onHotspotsChange({ ...allHotspots, [asmId]: [] });
+      }
+
+      function exportHS() {
+        const data = JSON.stringify(allHotspots, null, 2);
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'beretta_hotspots_' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function handleImport(ev) {
+        const file = ev.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = re => {
+          try { onHotspotsChange(JSON.parse(re.target.result)); }
+          catch { alert('Invalid JSON file'); }
+        };
+        reader.readAsText(file); ev.target.value = '';
+      }
+
+      function clearImage() {
+        if (!confirm('Remove saved drawing for ' + asmId + '?')) return;
+        setImgSrc(null); setPdfRef(null); setPdfPages(0); setPdfPage(1);
+        try { localStorage.removeItem('brt_img_' + asmId); } catch { }
+      }
+
+      const displayW = Math.round(natW * zoom);
+      const displayH = Math.round(natH * zoom);
+      const editCursor = editMode ? (selectedPart !== null ? 'crosshair' : 'not-allowed') : 'default';
+
+      return ce('div', { style: { display: 'flex', flexDirection: 'column', height: height + 'px', overflow: 'hidden', background: 'var(--bg1)', borderBottom: '1px solid var(--border)' } },
+        // Hidden canvas for PDF → image conversion
+        ce('canvas', { ref: canvasRef, style: { display: 'none' } }),
+
+        // ── TOOLBAR ──
+        ce('div', { className: 'diagram-toolbar' },
+          ce('button', { className: 'diagram-btn', onClick: () => fileRef.current?.click() }, '📂 Load PNG/JPG/PDF'),
+          ce('input', { ref: fileRef, type: 'file', accept: 'image/*,.pdf', style: { display: 'none' }, onChange: handleFile }),
+
+          pdfPages > 0 && ce(React.Fragment, null,
+            ce('div', { className: 'diagram-sep' }),
+            ce('button', { className: 'diagram-btn-sm', onClick: () => navPage(-1), disabled: pdfPage <= 1 }, '◀'),
+            ce('span', { style: { fontSize: '11px', color: 'var(--text1)', fontFamily: 'var(--font-mono)', padding: '0 4px' } }, pdfPage + '/' + pdfPages),
+            ce('button', { className: 'diagram-btn-sm', onClick: () => navPage(1), disabled: pdfPage >= pdfPages }, '▶')
+          ),
+
+          ce('div', { className: 'diagram-sep' }),
+          ce('button', { className: 'diagram-btn-sm', onClick: () => setZoom(z => Math.max(0.2, +(z - 0.25).toFixed(2))), disabled: !imgSrc }, '−'),
+          ce('span', { style: { fontSize: '11px', color: 'var(--text1)', fontFamily: 'var(--font-mono)', minWidth: '40px', textAlign: 'center' } }, Math.round(zoom * 100) + '%'),
+          ce('button', { className: 'diagram-btn-sm', onClick: () => setZoom(z => Math.min(5, +(z + 0.25).toFixed(2))), disabled: !imgSrc }, '+'),
+          ce('button', { className: 'diagram-btn-sm', onClick: () => setZoom(1), disabled: !imgSrc }, '1:1'),
+          ce('button', { className: 'diagram-btn-sm', onClick: () => setZoom(0.5), disabled: !imgSrc }, '50%'),
+
+          ce('div', { className: 'diagram-sep' }),
+
+          // Edit mode toggle
+          ce('button', {
+            className: 'diagram-btn' + (editMode ? ' active' : ''),
+            onClick: () => setEditMode(m => !m),
+            disabled: !imgSrc,
+            title: 'Enable hotspot placement mode'
+          }, '✏ ' + (editMode ? 'Edit ON' : 'Edit Hotspots')),
+
+          editMode && ce('span', { className: 'edit-hint' },
+            selectedPart !== null ? '→ Click diagram to place item ' + selectedPart : '← Select a row first'
+          ),
+
+          asmHS.length > 0 && ce('button', { className: 'diagram-btn-sm', onClick: clearHS, style: { color: 'var(--red)', borderColor: '#450a0a' }, title: 'Remove all hotspots for this assembly' }, '× Clear All'),
+
+          ce('div', { style: { flex: 1 } }),
+
+          // Hotspot count
+          asmHS.length > 0 && ce('span', { style: { fontSize: '10px', background: 'var(--amberBg)', color: 'var(--amber)', border: '1px solid var(--amber3)', borderRadius: '10px', padding: '1px 8px', flexShrink: 0 } },
+            asmHS.length + (asmHS.length === 1 ? ' hotspot' : ' hotspots')
+          ),
+
+          imgSrc && ce('button', { className: 'diagram-btn-sm', onClick: clearImage, title: 'Remove saved drawing' }, '🗑'),
+          ce('div', { className: 'diagram-sep' }),
+          ce('button', { className: 'diagram-btn-sm', onClick: exportHS, title: 'Export all hotspot coordinates as JSON' }, '↓ Export'),
+          ce('label', { className: 'diagram-btn-sm', style: { cursor: 'pointer' }, title: 'Import hotspot JSON' },
+            '↑ Import',
+            ce('input', { ref: importRef, type: 'file', accept: '.json', style: { display: 'none' }, onChange: handleImport })
+          )
+        ),
+
+        // Edit mode info bar
+        editMode && ce('div', { className: 'hs-info-bar' },
+          ce('span', null, '✏ EDIT MODE'),
+          ce('span', { style: { color: 'var(--text1)' } },
+            selectedPart !== null
+              ? 'Click anywhere on the drawing to place hotspot for Item ' + selectedPart + '. Click an existing hotspot to remove it.'
+              : 'Click a row in the table below to select a part, then click on the drawing to place its hotspot.'
+          )
+        ),
+
+        // ── DIAGRAM SCROLL AREA ──
+        ce('div', { className: 'diagram-scroll' },
+          loading && ce('div', { style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', gap: '8px' } },
+            ce('span', { style: { fontSize: '18px', animation: 'spin 1s linear infinite' } }, '⏳'),
+            ce('span', null, 'Rendering...')
+          ),
+
+          !loading && !imgSrc && ce('div', { className: 'diagram-empty' },
+            ce('div', { style: { fontSize: '36px', opacity: '0.15', marginBottom: '4px' } }, '🖼'),
+            ce('div', { style: { color: 'var(--text1)', fontWeight: '500' } }, 'No drawing loaded for this assembly'),
+            ce('div', { style: { color: 'var(--text2)', fontSize: '11px', marginTop: '4px' } }, 'Click  📂 Load  to import a PNG, JPG, or PDF drawing'),
+            ce('div', { style: { fontSize: '10px', color: 'var(--text2)', marginTop: '8px', background: 'var(--bg2)', padding: '6px 12px', borderRadius: '4px', border: '1px solid var(--border)', maxWidth: '400px', lineHeight: '1.7' } },
+              ce('strong', { style: { color: 'var(--amber)' } }, '\uD83D\uDCA1 Tip: '), 'Export PDF pages as PNG from Adobe Reader or browser print → Save as PDF-PNG. Then load here and use Edit Hotspots mode to link parts.'
+            )
+          ),
+
+          !loading && imgSrc && ce('div', {
+            ref: wrapperRef,
+            style: {
+              position: 'relative',
+              width: displayW + 'px',
+              height: displayH + 'px',
+              flexShrink: 0,
+              cursor: editCursor,
+              alignSelf: 'flex-start'
+            },
+            onClick: handleDiagClick
+          },
+            ce('img', {
+              src: imgSrc,
+              onLoad: handleImgLoad,
+              style: { display: 'block', width: '100%', height: '100%', userSelect: 'none', pointerEvents: 'none' },
+              draggable: false
+            }),
+            // ── HOTSPOT MARKERS ──
+            ...asmHS.map(hs => {
+              const isSel = hs.partItem === selectedPart;
+              return ce('div', {
+                key: hs.id,
+                className: 'hotspot-marker' + (isSel ? ' hs-selected' : '') + (editMode ? ' edit-mode' : ''),
+                style: {
+                  position: 'absolute',
+                  left: (hs.nx * 100) + '%',
+                  top: (hs.ny * 100) + '%',
+                  transform: 'translate(-50%,-50%)',
+                  zIndex: isSel ? 10 : 5
+                },
+                title: editMode ? 'Click to remove hotspot for item ' + hs.partItem : 'Item ' + hs.partItem + ' — Click to jump to row',
+                onClick: ev => {
+                  ev.stopPropagation();
+                  if (editMode) { removeHS(hs.id, ev); }
+                  else { onPartSelect(hs.partItem); }
+                }
+              }, hs.partItem);
+            })
+          )
+        )
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MAIN APP
+    // ─────────────────────────────────────────────────────────────
+    function App({ selModel }) {
+      const [selAsm, setSelAsm] = useState(null);
+      const [search, setSearch] = useState('');
+      const [openGroups, setOpenGroups] = useState({});
+      const [showDiag, setShowDiag] = useState(false);
+      const [diagH, setDiagH] = useState(340);
+      const [selectedPart, setSelectedPart] = useState(null);
+      const [allHotspots, setAllHotspots] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('brt_hs') || '{}'); }
+        catch { return {}; }
+      });
+      const contentRef = useRef(null);
+      const tableRef = useRef(null);
+
+      const model = useMemo(() => DB.models.find(m => m.id === selModel), [selModel]);
+
+      const groupedAsms = useMemo(() => {
+        const g = {};
+        model.assemblies.forEach(a => { if (!g[a.group]) g[a.group] = []; g[a.group].push(a); });
+        return g;
+      }, [model]);
+
+      const assembly = useMemo(() => selAsm ? model.assemblies.find(a => a.id === selAsm) : null, [selAsm, model]);
+
+      const filteredParts = useMemo(() => {
+        if (!assembly) return [];
+        if (!search.trim()) return assembly.parts;
+        const q = search.toLowerCase();
+        return assembly.parts.filter(p =>
+          (p.idCode || '').toLowerCase().includes(q) ||
+          (p.descIT || '').toLowerCase().includes(q) ||
+          (p.descEN || '').toLowerCase().includes(q) ||
+          (p.pn || '').toLowerCase().includes(q) ||
+          String(p.item).includes(q)
+        );
+      }, [assembly, search]);
+
+      const totalParts = useMemo(() => model.assemblies.reduce((s, a) => s + a.parts.length, 0), [model]);
+      const asmHS = useMemo(() => allHotspots[selAsm] || [], [allHotspots, selAsm]);
+
+      // Persist hotspots
+      useEffect(() => {
+        try { localStorage.setItem('brt_hs', JSON.stringify(allHotspots)); } catch { }
+      }, [allHotspots]);
+
+      // Bidirectional: scroll table to selected part when changed by hotspot click
+      useEffect(() => {
+        if (selectedPart === null || !tableRef.current) return;
+        const row = tableRef.current.querySelector('[data-item="' + selectedPart + '"]');
+        if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, [selectedPart]);
+
+      // Reset selected part when assembly changes
+      useEffect(() => { setSelectedPart(null); }, [selAsm]);
+
+      const toggleGroup = useCallback(g => setOpenGroups(prev => ({ ...prev, [g]: !prev[g] })), []);
+
+      const selectAsm = useCallback(id => { setSelAsm(id); setSearch(''); setSelectedPart(null); }, []);
+
+      function handleResize(clientY) {
+        if (!contentRef.current) return;
+        const rect = contentRef.current.getBoundingClientRect();
+        setDiagH(Math.max(120, Math.min(clientY - rect.top - 44, rect.height - 180)));
+      }
+
+      function handlePartSelect(itemNum) {
+        setSelectedPart(itemNum === selectedPart ? null : itemNum);
+      }
+
+      return ce('div', { className: 'main-layout' },
+        // ── SIDEBAR ──
+        ce('div', { className: 'sidebar' },
+          ce('div', { className: 'sidebar-header' }, ce('div', { className: 'sidebar-title' }, 'COMPONENT TREE')),
+          ce('div', { className: 'sidebar-scroll' },
+            Object.entries(groupedAsms).map(([grp, asms]) => {
+              const open = openGroups[grp] !== false;
+              const gi = GROUPS[grp] || { icon: '📋', color: '#888' };
+              return ce('div', { key: grp, className: 'model-group' },
+                ce('div', {
+                  className: 'model-header',
+                  style: { borderLeftColor: gi.color },
+                  onClick: () => toggleGroup(grp)
+                },
+                  ce('span', { style: { fontSize: '12px' } }, gi.icon),
+                  ce('span', { className: 'model-name', style: { color: gi.color } }, grp),
+                  ce('span', { className: 'model-desc' }, asms.length + ' asm'),
+                  ce('span', { style: { color: 'var(--text2)', fontSize: '10px', marginLeft: '4px', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' } }, '▶')
+                ),
+                open && asms.map(a => {
+                  const hasHS = (allHotspots[a.id] || []).length > 0;
+                  return ce('div', {
+                    key: a.id,
+                    className: 'tree-item' + (selAsm === a.id ? ' active' : ''),
+                    onClick: () => selectAsm(a.id)
+                  },
+                    ce('div', { className: 'tree-content' },
+                      ce('div', { className: 'tree-label' }, a.title),
+                      ce('div', { className: 'tree-code' }, a.id + ' · ' + a.drawing)
+                    ),
+                    hasHS && ce('div', { className: 'tree-hs-dot', title: 'Has hotspots' }),
+                    ce('div', { className: 'tree-parts-badge' }, a.parts.length)
+                  );
                 })
-                i = j
+              );
+            })
+          )
+        ),
 
-    return header_info, items
+        // ── CONTENT ──
+        ce('div', { ref: contentRef, className: 'content' },
+          assembly
+            ? ce('div', { style: { display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' } },
 
+              // Content header
+              ce('div', { className: 'content-header' },
+                ce('div', { className: 'asm-title-row' },
+                  ce('span', { className: 'asm-code-big' }, assembly.id),
+                  ce('span', { className: 'asm-name' }, assembly.title),
+                  ce('button', {
+                    className: 'diag-toggle-btn' + (showDiag ? ' active' : ''),
+                    style: { marginLeft: 'auto' },
+                    onClick: () => setShowDiag(s => !s),
+                    title: showDiag ? 'Hide drawing panel' : 'Show drawing panel'
+                  }, showDiag ? '🖼 Hide Drawing' : '🖼 Show Drawing'),
+                  !showDiag && asmHS.length > 0 && ce('span', { style: { fontSize: '10px', background: 'var(--amberBg)', color: 'var(--amber)', border: '1px solid var(--amber3)', borderRadius: '10px', padding: '1px 7px' } }, asmHS.length + ' hotspots saved')
+                ),
+                ce('div', { className: 'asm-meta' },
+                  ce('span', { className: 'asm-meta-item' }, 'Drawing: ', ce('span', null, assembly.drawing)),
+                  ce('span', { className: 'asm-meta-item' }, 'EN: ', ce('span', null, assembly.titleEN)),
+                  ce('span', { className: 'asm-meta-item' }, 'Parts: ', ce('span', null, assembly.parts.length)),
+                  ce('span', { className: 'asm-meta-item' }, 'Group: ', ce('span', null, assembly.group))
+                )
+              ),
 
-# ── Google Sheets ──────────────────────────────────────────────────────────────
+              // Diagram panel (collapsible)
+              showDiag && ce(DiagramPanel, {
+                assembly,
+                allHotspots,
+                onHotspotsChange: setAllHotspots,
+                selectedPart,
+                onPartSelect: handlePartSelect,
+                height: diagH
+              }),
 
-def get_sheets_client():
-    import gspread
-    from google.oauth2.service_account import Credentials
-    scopes = ['https://www.googleapis.com/auth/spreadsheets']
-    creds  = Credentials.from_service_account_file(CREDENTIALS_PATH, scopes=scopes)
-    return gspread.authorize(creds)
+              showDiag && ce(ResizeH, { onDrag: handleResize }),
 
+              // Search + status bar
+              ce('div', { style: { padding: '6px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg1)', flexShrink: 0, display: 'flex', gap: '8px', alignItems: 'center' } },
+                ce('span', { style: { color: 'var(--text2)', fontSize: '11px' } }, '🔍'),
+                ce('input', {
+                  type: 'text', placeholder: 'Search item, code, description, part number...',
+                  value: search, onChange: ev => setSearch(ev.target.value),
+                  style: { flex: 1, maxWidth: '360px', fontSize: '12px' }
+                }),
+                selectedPart !== null && ce('button', {
+                  style: { background: 'var(--blueBg)', color: 'var(--blue)', border: '1px solid var(--blue3)', borderRadius: '10px', padding: '1px 8px', fontSize: '10px', cursor: 'pointer', fontFamily: 'var(--font-ui)' },
+                  onClick: () => setSelectedPart(null),
+                  title: 'Clear selection'
+                }, '🔗 Linked: item ' + selectedPart + ' ×'),
+                search && ce('span', {
+                  style: { fontSize: '11px', color: 'var(--text2)', cursor: 'pointer' },
+                  onClick: () => setSearch('')
+                }, filteredParts.length + ' results ✕')
+              ),
 
-def ensure_header(worksheet):
-    primera = worksheet.row_values(1)
-    if not primera:
-        worksheet.append_row(HEADER_SHEETS)
-        print("  Header creado en Google Sheets.")
+              // ── TABLE ──
+              ce('div', { ref: tableRef, className: 'table-wrap' },
+                ce('table', { className: 'parts-table' },
+                  ce('thead', null,
+                    ce('tr', null,
+                      ce('th', { className: 'th-num' }, 'Item'),
+                      ce('th', { style: { width: '170px' } }, 'ID Code'),
+                      ce('th', null, 'Description (IT / EN)'),
+                      ce('th', { className: 'th-qty' }, 'Qty'),
+                      ce('th', { style: { width: '140px' } }, 'Part Number')
+                    )
+                  ),
+                  ce('tbody', null,
+                    filteredParts.length === 0
+                      ? ce('tr', null, ce('td', { colSpan: 5, style: { textAlign: 'center', padding: '32px', color: 'var(--text2)' } }, 'No parts match your search'))
+                      : filteredParts.map(p => {
+                        const isLinked = p.item === selectedPart;
+                        const hasHS = asmHS.some(h => h.partItem === p.item);
+                        return ce('tr', {
+                          key: p.item,
+                          'data-item': p.item,
+                          className: (p.special ? 'special-row ' : '') + (isLinked ? 'row-linked' : ''),
+                          title: isLinked ? 'Click to deselect' : 'Click to select and link with diagram',
+                          onClick: () => handlePartSelect(p.item)
+                        },
+                          ce('td', { className: 'cell-item' },
+                            p.item,
+                            hasHS && ce('span', { className: 'cell-hs-dot', title: 'Has hotspot on diagram' })
+                          ),
+                          ce('td', null, ce('div', { className: 'cell-code' }, p.idCode ? ce(HL, { text: p.idCode, q: search }) : ce('span', { style: { color: 'var(--text2)' } }, '—'))),
+                          ce('td', null,
+                            ce('div', { className: 'cell-desc-it' }, ce(HL, { text: p.descIT, q: search })),
+                            ce('div', { className: 'cell-desc-en' }, ce(HL, { text: p.descEN, q: search }))
+                          ),
+                          ce('td', { className: 'cell-qty' }, p.qty),
+                          ce('td', null, ce('span', { className: 'cell-partnum' + (p.special ? ' special' : '') }, ce(HL, { text: p.pn, q: search })))
+                        );
+                      })
+                  )
+                )
+              )
+            )
+            : ce('div', { className: 'welcome' },
+              ce('div', { className: 'welcome-icon' }, '⚙'),
+              ce('div', { className: 'welcome-title' }, 'Beretta Electronic Parts Catalog'),
+              ce('div', { className: 'welcome-sub' }, 'Select an assembly from the navigation tree to view its Bill of Materials and load technical drawings'),
+              ce('div', { className: 'welcome-stats' },
+                ce('div', { className: 'stat-box' }, ce('div', { className: 'stat-num' }, model.assemblies.length), ce('div', { className: 'stat-lbl' }, 'Assemblies')),
+                ce('div', { className: 'stat-box' }, ce('div', { className: 'stat-num' }, totalParts), ce('div', { className: 'stat-lbl' }, 'Total Parts')),
+                ce('div', { className: 'stat-box' }, ce('div', { className: 'stat-num' }, model.sn !== '—' ? model.sn : '—'), ce('div', { className: 'stat-lbl' }, 'Serial No.'))
+              )
+            )
+        )
+      );
+    }
 
-def probar_conexion_sheets():
-    gc = get_sheets_client()
-    sh = gc.open_by_key(SHEET_ID)
-    print("Archivo abierto:", sh.title)
-    print("Pestañas disponibles:", [ws.title for ws in sh.worksheets()])
-    ws = sh.worksheet(SHEET_TAB)
-    print("Pestaña encontrada:", ws.title)
-    print("Primera fila:", ws.row_values(1))
+    // ─────────────────────────────────────────────────────────────
+    // ROOT + STATUS BAR
+    // ─────────────────────────────────────────────────────────────
+    function Root() {
+      const [selModel, setSelModel] = useState('T46');
+      const model = DB.models.find(m => m.id === selModel);
+      return ce('div', { style: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' } },
+        // Topbar
+        ce('div', { className: 'topbar' },
+          ce('div', { className: 'logo-badge' },
+            ce('div', { className: 'logo-box' }, 'BERETTA'),
+            ce('div', { className: 'logo-sub' }, 'EPC v2')
+          ),
+          ce('div', { className: 'divider' }),
+          ce('span', { className: 'tag tag-amber' }, 'ALFREDO s.r.l.'),
+          ce('div', { className: 'divider' }),
+          ce('select', { value: selModel, onChange: ev => setSelModel(ev.target.value), style: { fontWeight: '700', fontSize: '13px' } },
+            DB.models.map(m => ce('option', { key: m.id, value: m.id }, 'Model: ' + m.id))
+          ),
+          ce('div', { style: { display: 'flex', flexDirection: 'column', lineHeight: '1.2' } },
+            ce('span', { className: 'sn-label' }, 'Serial Number'),
+            ce('span', { className: 'sn-value' }, model.sn !== '—' ? model.sn : 'N/A')
+          ),
+          ce('div', { style: { display: 'flex', flexDirection: 'column', lineHeight: '1.2' } },
+            ce('span', { className: 'sn-label' }, 'Engine'),
+            ce('span', { style: { fontSize: '11px', color: 'var(--text1)' } }, model.engine !== '—' ? model.engine : '—')
+          ),
+          ce('div', { className: 'ml-auto', style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+            ce('span', { className: 'tag tag-blue' }, 'T46 · 2025'),
+            ce('span', { style: { fontSize: '11px', color: 'var(--text2)' } }, 'Rev. D · Oct 2025')
+          )
+        ),
+        ce(App, { selModel }),
+        // Status bar
+        ce('div', { className: 'statusbar' },
+          ce('div', { className: 'status-dot' }),
+          ce('span', null, 'Beretta Alfredo s.r.l. — Via Parini 24, 20842 Besana Brianza (MB) Italy'),
+          ce('span', { style: { color: 'var(--text2)', marginLeft: 'auto', fontFamily: 'var(--font-mono)' } }, '🖼 Diagrams stored locally · 🔗 Click any row to link with drawing · ✏ Edit Hotspots to place markers')
+        )
+      );
+    }
 
-def subir_a_sheets(header_info, items):
-    try:
-        gc = get_sheets_client()
-        sh = gc.open_by_key(SHEET_ID)
-        ws = sh.worksheet(SHEET_TAB)
-        ensure_header(ws)
+    ReactDOM.createRoot(document.getElementById('root')).render(ce(Root));
+  </script>
+</body>
 
-        fecha_hoy = date.today().isoformat()
-        filas = []
-        for d in items:
-            filas.append([
-                header_info['quote'],
-                fecha_hoy,
-                header_info.get('quote_date', ''),
-                header_info.get('expires', ''),
-                d['Line'],
-                f"'{d['Part']}",
-                d['Description'],
-                d['Expected Qty'] if d['Expected Qty'] is not None else '',
-                d['Unit Price']   if d['Unit Price']   is not None else '',
-                d['Ext. Price']   if d['Ext. Price']   is not None else '',
-                d['Lead Time']    or '',
-                '',   # Notes — rellenar manualmente si se desea
-            ])
-
-        ws.append_rows(filas, value_input_option='USER_ENTERED')
-        print(f"  ✅ {len(filas)} filas añadidas al Google Sheet (Quote# {header_info['quote']})")
-
-    except Exception as e:
-        import traceback
-        print("  ⚠️  No se pudo escribir en Google Sheets")
-        print(f"  Tipo    : {type(e).__name__}")
-        print(f"  Repr    : {repr(e)}")
-        print("  Traceback:")
-        traceback.print_exc()
-        print("     El Excel local sí se generó correctamente.")
-        print("     Verifica que SHEET_ID sea solo el ID (no la URL completa).")
-    
-
-# ── Main ───────────────────────────────────────────────────────────────────────
-
-def procesar_cotizacion(ruta_pdf, ruta_excel):
-    print(f"\n{'─'*55}")
-    print(f"  Procesando: {ruta_pdf}")
-    print(f"{'─'*55}")
-
-    header_info, items = parsear_pdf(ruta_pdf)
-    print(f"  Items extraídos: {len(items)}")
-    
-    # Excel
-    df = pd.DataFrame(items, columns=[
-        'Line', 'Part', 'Description',
-        'Expected Qty', 'Unit Price', 'Ext. Price', 'Lead Time'
-    ])
-    df.to_excel(ruta_excel, index=False)
-    print(f"  Excel guardado: {ruta_excel}")
-
-    # Google Sheets
-    subir_a_sheets(header_info, items)
-    print(f"{'─'*55}\n")
-
-if __name__ == '__main__':
-    ruta_pdf   = r'C:\Users\backofficemineria\Documents\PHYTON\Cot_Astec_Pdf\Quote_Astec.pdf'
-    ruta_excel = r'C:\Users\backofficemineria\Documents\PHYTON\Cot_Astec_Pdf\cotizacion_procesada.xlsx'
-    procesar_cotizacion(ruta_pdf, ruta_excel)
-    probar_conexion_sheets()
+</html>
