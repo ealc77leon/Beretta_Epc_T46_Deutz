@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beretta EPC — Electronic Parts Catalog</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    :root {
+      --bg0: #0d0f11;
+      --bg1: #13171a;
+      --bg2: #1a1f24;
+      --bg3: #22282e;
+      --bg4: #2c333b;
+      --border: #2e3740;
+      --border2: #3d4755;
+      --text0: #e8edf2;
+      --text1: #a8b4c0;
+      --text2: #6b7a88;
+      --amber: #f59e0b;
+      --amber2: #d97706;
+      --amber3: #92400e;
+      --amberBg: #1c1408;
+      --blue: #3b82f6;
+      --blueBg: #0c1829;
+      --green: #10b981;
+      --greenBg: #041810;
+      --red: #ef4444;
+      --redBg: #180808;
+      --font-ui: 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'Consolas', 'Courier New', monospace;
+    }
+
+    body {
+      background: var(--bg0);
+      color: var(--text0);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden
+    }
+
+    /* TOP BAR */
+    .topbar {
+      background: var(--bg1);
+      border-bottom: 1px solid var(--border);
+      padding: 0 12px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      z-index: 100
+    }
+
+    .logo-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: 8px
+    }
+
+    .logo-box {
+      background: var(--amber);
+      color: #000;
+      font-weight: 900;
+      font-size: 14px;
+      letter-spacing: 1px;
+      padding: 4px 9px;
+      border-radius: 3px
+    }
+
+    .logo-sub {
+      color: var(--text1);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase
+    }
+
+    .divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border2);
+      flex-shrink: 0
+    }
+
+    .topbar select,
+    .topbar input {
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      color: var(--text0);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      outline: none
+    }
+
+    .topbar select:focus,
+    .topbar input:focus {
+      border-color: var(--amber)
+    }
+
+    .topbar input {
+      width: 220px
+    }
+
+    .topbar input::placeholder {
+      color: var(--text2)
+    }
+
+    .tag {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-transform: uppercase
+    }
+
+    .tag-amber {
+      background: var(--amberBg);
+      color: var(--amber);
+      border: 1px solid var(--amber3)
+    }
+
+    .tag-blue {
+      background: var(--blueBg);
+      color: var(--blue);
+      border: 1px solid #1d4ed8
+    }
+
+    .badge-count {
+      background: var(--amber);
+      color: #000;
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 10px;
+      font-weight: 800;
+      margin-left: 4px
+    }
+
+    .ml-auto {
+      margin-left: auto
+    }
+
+    .sn-label {
+      color: var(--text2);
+      font-size: 11px
+    }
+
+    .sn-value {
+      color: var(--amber);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700
+    }
+
+    /* LAYOUT */
+    .main-layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden
+    }
+
+    /* LEFT SIDEBAR */
+    .sidebar {
+      width: 260px;
+      background: var(--bg1);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0
+    }
+
+    .sidebar-header {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+      flex-shrink: 0
+    }
+
+    .sidebar-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--text2);
+      text-transform: uppercase
+    }
+
+    .sidebar-scroll {
+      overflow-y: auto;
+      flex: 1
+    }
+
+    .sidebar-scroll::-webkit-scrollbar {
+      width: 4px
+    }
+
+    .sidebar-scroll::-webkit-scrollbar-track {
+      background: transparent
+    }
+
+    .sidebar-scroll::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 2px
+    }
+
+    /* TREE ITEMS */
+    .tree-item {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: background 0.1s
+    }
+
+    .tree-item:hover {
+      background: var(--bg3)
+    }
+
+    .tree-item.active {
+      background: var(--amberBg);
+      border-left-color: var(--amber)
+    }
+
+    .tree-item.active .tree-label {
+      color: var(--amber)
+    }
+
+    .tree-item.active .tree-code {
+      color: var(--amber2)
+    }
+
+    .tree-indent {
+      flex-shrink: 0
+    }
+
+    .tree-arrow {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--text2);
+      font-size: 9px;
+      transition: transform 0.15s
+    }
+
+    .tree-arrow.open {
+      transform: rotate(90deg)
+    }
+
+    .tree-icon {
+      font-size: 11px;
+      flex-shrink: 0;
+      width: 16px;
+      text-align: center
+    }
+
+    .tree-content {
+      padding: 5px 8px 5px 2px;
+      flex: 1;
+      min-width: 0
+    }
+
+    .tree-label {
+      font-size: 12px;
+      color: var(--text1);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3
+    }
+
+    .tree-code {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text2);
+      margin-top: 1px
+    }
+
+    .tree-parts-badge {
+      font-size: 10px;
+      color: var(--text2);
+      background: var(--bg4);
+      border-radius: 8px;
+      padding: 1px 5px;
+      flex-shrink: 0;
+      margin-right: 6px
+    }
+
+    /* MODEL GROUP */
+    .model-group {
+      border-bottom: 1px solid var(--border)
+    }
+
+    .model-header {
+      padding: 7px 10px;
+      background: var(--bg2);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-left: 3px solid var(--amber)
+    }
+
+    .model-header:hover {
+      background: var(--bg3)
+    }
+
+    .model-name {
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 1px;
+      color: var(--amber)
+    }
+
+    .model-desc {
+      font-size: 10px;
+      color: var(--text2);
+      margin-left: auto
+    }
+
+    /* CONTENT AREA */
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden
+    }
+
+    .content-header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      flex-shrink: 0
+    }
+
+    .asm-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap
+    }
+
+    .asm-code-big {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--amber)
+    }
+
+    .asm-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text0)
+    }
+
+    .asm-meta {
+      display: flex;
+      gap: 16px;
+      margin-top: 6px;
+      flex-wrap: wrap
+    }
+
+    .asm-meta-item {
+      font-size: 11px;
+      color: var(--text2)
+    }
+
+    .asm-meta-item span {
+      color: var(--text1)
+    }
+
+    /* TABLE */
+    .table-wrap {
+      flex: 1;
+      overflow: auto
+    }
+
+    .table-wrap::-webkit-scrollbar {
+      width: 6px;
+      height: 6px
+    }
+
+    .table-wrap::-webkit-scrollbar-track {
+      background: transparent
+    }
+
+    .table-wrap::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 3px
+    }
+
+    .parts-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px
+    }
+
+    .parts-table thead {
+      position: sticky;
+      top: 0;
+      z-index: 10
+    }
+
+    .parts-table th {
+      background: var(--bg2);
+      color: var(--text2);
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border2);
+      text-align: left;
+      white-space: nowrap
+    }
+
+    .parts-table th.th-num {
+      width: 48px;
+      text-align: center
+    }
+
+    .parts-table th.th-qty {
+      width: 52px;
+      text-align: center
+    }
+
+    .parts-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle
+    }
+
+    .parts-table tr:hover td {
+      background: var(--bg2)
+    }
+
+    .parts-table tr.highlighted td {
+      background: var(--amberBg)
+    }
+
+    .cell-item {
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text2);
+      font-weight: 700
+    }
+
+    .cell-code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--blue);
+      word-break: break-all
+    }
+
+    .cell-desc-it {
+      color: var(--text0);
+      font-size: 12px
+    }
+
+    .cell-desc-en {
+      color: var(--text2);
+      font-size: 11px;
+      font-style: italic;
+      margin-top: 1px
+    }
+
+    .cell-qty {
+      text-align: center;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--text0)
+    }
+
+    .cell-partnum {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--amber)
+    }
+
+    .cell-partnum.special {
+      color: var(--green)
+    }
+
+    .special-row td {
+      border-left: 2px solid var(--green)
+    }
+
+    /* EMPTY / WELCOME */
+    .welcome {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      color: var(--text2)
+    }
+
+    .welcome-icon {
+      font-size: 48px;
+      opacity: 0.3
+    }
+
+    .welcome-title {
+      font-size: 16px;
+      color: var(--text1);
+      font-weight: 600
+    }
+
+    .welcome-sub {
+      font-size: 12px;
+      text-align: center;
+      max-width: 320px;
+      line-height: 1.6
+    }
+
+    .welcome-stats {
+      display: flex;
+      gap: 24px;
+      margin-top: 8px
+    }
+
+    .stat-box {
+      text-align: center;
+      padding: 12px 20px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px
+    }
+
+    .stat-num {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--amber);
+      font-family: var(--font-mono)
+    }
+
+    .stat-lbl {
+      font-size: 10px;
+      color: var(--text2);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-top: 2px
+    }
+
+    /* STATUS BAR */
+    .statusbar {
+      background: var(--bg1);
+      border-top: 1px solid var(--border);
+      padding: 3px 14px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 10px;
+      color: var(--text2);
+      flex-shrink: 0
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0
+    }
+
+    /* SEARCH HIGHLIGHT */
+    mark {
+      background: var(--amber3);
+      color: var(--amber);
+      border-radius: 2px;
+      padding: 0 2px
+    }
+
+    /* SCROLLBAR GLOBAL */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 3px
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script>
+    const { useState, useMemo, useCallback } = React;
+
+    // ============================================================
+    // COMPLETE T46 PARTS DATABASE — S/N 18925
+    // ============================================================
+    const DB = {
+      models: [
+        {
+          id: 'T46', sn: '18925', year: '2025', engine: 'Deutz TCD 2.9 Stage 5',
+          assemblies: [
+            {
+              id: 'A1053', drawing: 'DIS. 246-000/1', type: 'COD.',
+              title: 'TESTA 43-2V', titleEN: 'Rotary Head 43-2V',
+              group: 'ROTARY HEAD ASSEMBLY',
+              parts: [
+                { item: 1, idCode: 'DA1.DA11.00034', qty: 2, descIT: 'MOTORE IDRAULICO OMT', descEN: 'HYDRAULIC MOTOR', pn: 'HYMO100008' },
+                { item: 2, idCode: 'V45.M10X40', qty: 8, descIT: 'VITE T.C. M10X40-12K', descEN: 'SCREW SOCKET HEAD M10X40-12K', pn: 'SCR-SK-M10-40-12K' },
+                { item: 3, idCode: '500.5012.00007', qty: 2, descIT: 'GUARNIZIONE CARTA PER MOTORE', descEN: 'PAPER FOR MOTOR', pn: '221-024' },
+                { item: 4, idCode: 'V51.10X30', qty: 2, descIT: 'SPINA DI CENTRAGGIO 10X30', descEN: 'CENTERING PIN 10x30', pn: 'C-PIN-10-30' },
+                { item: 5, idCode: 'B60.B601.00010', qty: 2, descIT: 'PIGNONE PER MOTORE', descEN: 'MOTOR PINION', pn: '225-005-3.2' },
+                { item: 6, idCode: 'B60.B507.00049', qty: 1, descIT: 'SCATOLA PER TESTA', descEN: 'BOX HEAD', pn: '246-001-1' },
+                { item: 7, idCode: '400.4002.00022', qty: 2, descIT: 'CUSCINETTO A SFERE', descEN: 'BALL BEARING', pn: '6207' },
+                { item: 8, idCode: 'V55.D35', qty: 1, descIT: 'SEEGER ESTERNO 35', descEN: 'EXTERNAL CIRCLIP 35', pn: 'RNG-EX-35' },
+                { item: 9, idCode: 'V45.M10X30', qty: 12, descIT: 'VITE T.C. M10X30-12K', descEN: 'SCREW SOCKET HEAD M10X30-12K', pn: 'SCR-SK-M10-30-12K' },
+                { item: 10, idCode: 'B60.B601.00020', qty: 2, descIT: 'COPERCHIO PIGNONE', descEN: 'PINION COVER', pn: '221-006-1' },
+                { item: 11, idCode: 'V35.M16X45', qty: 10, descIT: 'VITE T.E. M16X45 10.9', descEN: 'SCREW HEX HEAD M16X45 10.9', pn: 'SCR-HX-M16-45 10.9' },
+                { item: 12, idCode: '500.5004.00075', qty: 2, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-167' },
+                { item: 13, idCode: 'B60.B601.00018', qty: 1, descIT: 'BUSSOLA', descEN: 'SPINDLE BEARING LOCK BUSH', pn: '221-002' },
+                { item: 14, idCode: 'V45.M10X35', qty: 26, descIT: 'VITE T.C. M10X35-12K', descEN: 'SCREW SOCKET HEAD M10X35-12K', pn: 'SCR-SK-M10-35-12K' },
+                { item: 15, idCode: '500.5012.00013', qty: 1, descIT: 'GUARNIZIONE 5MM DOPPIO LABBRO', descEN: 'SEAL 5MM DOUBLE LIP', pn: 'SLSM-80-75-8DL' },
+                { item: 16, idCode: 'B60.B601.00015', qty: 1, descIT: 'FLANGIA SUPERIORE', descEN: 'UPPER FLANGE', pn: '221-008' },
+                { item: 17, idCode: '500.5004.00013', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-4442' },
+                { item: 18, idCode: 'B60.B507.00049', qty: 1, descIT: 'COPERCHIO PER TESTATA', descEN: 'HEAD COVER', pn: '246-002' },
+                { item: 19, idCode: '400.4002.00001', qty: 1, descIT: 'CUSCINETTO A RULLI CONICI', descEN: 'TAPER ROLLER BEARING', pn: '32214A' },
+                { item: 20, idCode: '500.5004.00005', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-4582' },
+                { item: 21, idCode: '500.5001.00018', qty: 1, descIT: 'GUARNIZIONE 5MM DOPPIO LABBRO', descEN: 'SEAL 5MM DOUBLE LIP', pn: 'SLSM-45-110-12DL' },
+                { item: 22, idCode: 'V70.18X10X30', qty: 2, descIT: 'CHIAVETTA PARALLELA', descEN: 'KEY', pn: 'KEYP10007' },
+                { item: 23, idCode: 'B60.B601.00001', qty: 2, descIT: 'MEZZE LUNE', descEN: 'HALF MOON RING', pn: '246-007' },
+                { item: 24, idCode: 'B60.B509.00002', qty: 1, descIT: 'ATTACCO FLANCIATO', descEN: 'FLANGE PIN OR BOX', pn: '221-014-3' },
+                { item: 25, idCode: '500.5004.00004', qty: 2, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-182' },
+                { item: 26, idCode: 'V30.M12X45', qty: 1, descIT: 'VITE T.E. M12X45', descEN: 'SCREW HEX HEAD M12X45', pn: 'SCR-HX-M12-45' },
+                { item: 27, idCode: 'B60.B601.00027', qty: 1, descIT: 'FLANGIA CONICA', descEN: 'CONICAL FLANGE', pn: '246-005' },
+                { item: 28, idCode: 'B60.B601.00007', qty: 1, descIT: 'GHIERA', descEN: 'NUT', pn: '246-006' },
+                { item: 29, idCode: 'B60.B601.00022', qty: 1, descIT: 'FLANGIA INFERIORE', descEN: 'LOWER FLANGE FOR SPINDLE', pn: '246-004' },
+                { item: 30, idCode: '400.4002.00002', qty: 1, descIT: 'CUSCINETTO A RULLI CONICI', descEN: 'TAPER ROLLER BEARING', pn: '3217A' },
+                { item: 31, idCode: 'B60.B601.00002', qty: 1, descIT: 'CANOTTO CENTRALE', descEN: 'CENTRAL SHAFT', pn: '246-003' },
+                { item: 32, idCode: 'V70.16X10X40', qty: 2, descIT: 'CHIAVETTA PARALLELA', descEN: 'KEY', pn: 'KEYP10008' },
+                { item: 33, idCode: 'B60.B601.00011', qty: 2, descIT: 'CORONA CENTRALE', descEN: 'CENTRAL GEAR', pn: '221-004' },
+                { item: 34, idCode: 'V45.M10X35', qty: 8, descIT: 'VITE T.C. M10X35-12K', descEN: 'SCREW SOCKET HEAD M10X35-12K', pn: 'SCR-SK-M10-35-12K' },
+                { item: 35, idCode: 'B60.B601.00012', qty: 1, descIT: 'DISTANZIALE PER CUSCINETTO', descEN: 'SPACER FOR BEARING', pn: '221-012' },
+                { item: 36, idCode: '500.5004.00076', qty: 1, descIT: 'GUARNIZIONE OR SPECIALE 3.53 L=1400', descEN: 'SPECIAL ORING SEAL', pn: 'SLOR-SP020' },
+                { item: 37, idCode: 'B60.B601.00019', qty: 1, descIT: 'FLANGIA DI TENUTA', descEN: 'SPINDLE SEALING FLANGE', pn: '221-011' },
+                { item: 38, idCode: '500.5001.00017', qty: 1, descIT: 'GUARNIZIONE 5MM DOPPIO LABBRO', descEN: 'SEAL 5MM', pn: 'SLSM-75-90-10DL' },
+                { item: 39, idCode: 'V56.D75', qty: 1, descIT: 'SEEGER INTERNO 75', descEN: 'INTERNAL CIRCLIP 75', pn: 'RNG-IN-75' },
+                { item: 40, idCode: 'B60.B601.00017', qty: 1, descIT: 'GHIERA', descEN: 'RING NUT', pn: '221-010' },
+                { item: 41, idCode: 'B60.B507.00041', qty: 1, descIT: 'SUPPORTO ANTIROTAZIONE TESTINA', descEN: 'ANTI-ROTATION SUPPORT', pn: '221-053' },
+                { item: 42, idCode: 'B60.B601.00021', qty: 1, descIT: 'RONDELLA DI PROTEZIONE', descEN: 'WASHER', pn: '221-054' },
+                { item: 43, idCode: 'A1014', qty: 1, descIT: 'TESTINA ARIA-GASOLIO 1"1/4 Gas', descEN: 'AIR WATER FLUSHING HEAD 1"1/4 Gas', pn: '350', special: true },
+                { item: 44, idCode: '', qty: 1, descIT: 'TAPPO 1-2IN GAS', descEN: 'PLUG 1-2IN GAS', pn: 'FA-PLG-100004' },
+                { item: 45, idCode: 'V45.M12X38', qty: 16, descIT: 'VITE T.C. M12X38-12K', descEN: 'SCREW SOCKET HEAD M12X38-12K', pn: 'SCR-SK-M12-30-12K' },
+                { item: 46, idCode: 'V22.M10XSTD', qty: 4, descIT: 'DADO AUTOBLOCCANTE M10', descEN: 'LOCK NUT M10', pn: 'NUT-LK-M10' },
+                { item: 47, idCode: 'WAI.WA11.00092', qty: 2, descIT: 'DEVIATORE', descEN: 'DEVIATOR', pn: 'DI625-4-1' },
+                { item: 48, idCode: 'B50.B507.00013', qty: 1, descIT: 'SUPPORTO PER DEVIATORE', descEN: 'DEVIATOR SUPPORT', pn: '561-037' },
+                { item: 49, idCode: '', qty: 1, descIT: 'LIVELLO OLIO-GASOLIO 1/2"', descEN: '1/2" PLUG LEVEL OIL-DIESEL', pn: 'FA-PLG-100010' },
+                { item: 50, idCode: 'B60.B507.00020', qty: 1, descIT: 'PORTA DEVIATORE DI FLUSSO', descEN: 'DEVIATOR SUPPORT', pn: '221-052' },
+                { item: 51, idCode: 'V72.12X8X70', qty: 2, descIT: 'CHIAVETTA PARALLELA', descEN: 'KEY', pn: 'KEYP10010' },
+                { item: 60, idCode: '500.5010.00021', qty: 1, descIT: 'KIT DI GUARNIZIONI COMPLETO', descEN: 'COMPLETE SEAL KIT', pn: '—', special: true }
+              ]
+            },
+            {
+              id: 'A1014', drawing: 'DIS. 350/0', type: 'COD.',
+              title: 'TESTINA ARIA ACQUA 1"1/4', titleEN: 'Air/Water Flushing Head 1"1/4 Gas',
+              group: 'ROTARY HEAD ASSEMBLY',
+              parts: [
+                { item: 1, idCode: 'B60.B602.00006', qty: 1, descIT: 'CONTROGHIERA', descEN: 'COUNTER RING NUT', pn: '350-004' },
+                { item: 2, idCode: 'B60.B602.00016', qty: 1, descIT: 'GHIERA', descEN: 'RING NUT', pn: '350-003' },
+                { item: 3, idCode: '500.5004.00020', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-6200' },
+                { item: 4, idCode: '400.4002.00004', qty: 2, descIT: 'CUSCINETTO A RULLI CONICI', descEN: 'TAPER ROLLER BEARING', pn: '32010 X' },
+                { item: 5, idCode: 'B60.B602.00003', qty: 1, descIT: 'ALBERO', descEN: 'SHAFT', pn: '350-002' },
+                { item: 6, idCode: 'B60.B602.00004', qty: 1, descIT: 'ANELLO IN ACCIAIO', descEN: 'STEEL RING', pn: '350-005' },
+                { item: 7, idCode: '500.5002.00006', qty: 1, descIT: 'PACCHETTO 50-70-41 (1 BASE+1TETTO+5V)', descEN: 'VEEPAC SEAL 50-70-41', pn: 'V-PACK-50-70-41' },
+                { item: 8, idCode: 'V50.10MB', qty: 1, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-GRS-100002' },
+                { item: 9, idCode: 'B60.B602.00005', qty: 1, descIT: 'CORPO TESTINA AD INIEZIONE', descEN: 'BODY INJECTION', pn: '350-001' },
+                { item: 10, idCode: '', qty: 2, descIT: 'TAPPO 1 1-2IN GAS', descEN: 'PLUG 1 1-2IN GAS', pn: 'FA-PLG-100008' },
+                { item: 11, idCode: '', qty: 1, descIT: 'NIPPLO DA 1"1/4', descEN: 'STRAIGHT ADAPTER 1"1/4 Gas', pn: 'FA-STR-100006' }
+              ]
+            },
+            {
+              id: 'B2033', drawing: 'DIS. 561-065/0', type: 'COD.',
+              title: 'CARRELLO 43-2V SU SLITTA 120x120', titleEN: 'Carriage 43-2V on Mast 120x120 with Catenary',
+              group: 'MAST & CARRIAGE',
+              parts: [
+                { item: 1, idCode: 'B50.B504.00011', qty: 1, descIT: 'SUPPORTO PER CATENARIA', descEN: 'CHAIN UNIT CLAMPING SUPPORT', pn: '220-037' },
+                { item: 2, idCode: 'C16.ISO16B2.C', qty: 2, descIT: 'CATENA DA 1" DOPPIA', descEN: '1" DOUBLE CHAIN', pn: '16-B2' },
+                { item: 3, idCode: 'V20.M20XSTD', qty: 2, descIT: 'DADO AUTOBLOCCANTE DA M20', descEN: 'LOCK NUT M20', pn: 'NUT-LK-M20' },
+                { item: 4, idCode: '200.2001.00002', qty: 16, descIT: 'MOLLA A TAZZA', descEN: 'BELLEVILLE WASHER', pn: 'SPR-WS-21-40-2' },
+                { item: 5, idCode: 'B60.B607.00001', qty: 2, descIT: 'PERNO TENDICATENA PER 16-B2', descEN: '16-B2 CHAIN TIGHTENING PIN', pn: '222-011' },
+                { item: 6, idCode: 'C16.ISO16B2.F', qty: 1, descIT: 'FALSA MAGLIA 16-B2', descEN: '16-B2 FALSE LINK', pn: '16-B2-F' },
+                { item: 7, idCode: 'B60.B607.00003', qty: 1, descIT: 'LARDONE POSTERIORE', descEN: 'REAR GIB', pn: '561-040-B' },
+                { item: 8, idCode: 'B1395', qty: 4, descIT: 'PATTINO IN GOMMA SERIE 4', descEN: 'RUBBER SLIDE SERIES 4', pn: '561-035-1' },
+                { item: 9, idCode: 'B60.B607.00004', qty: 1, descIT: 'PIASTRA DI BASE PER CARRELLO', descEN: 'CARRIAGE PLATE', pn: '561-040-A' },
+                { item: 10, idCode: 'B60.B607.00005', qty: 1, descIT: 'LARDONE ANTERIORE', descEN: 'FRONT GIB', pn: '561-040-C' },
+                { item: 11, idCode: 'V45.M14X55', qty: 14, descIT: 'VITE T.C. M14X55-12K', descEN: 'SCREW SOCKET HEAD M14X55-12K', pn: 'SCR-SK-M14-55-12K' },
+                { item: 12, idCode: 'B60.B607.00006', qty: 1, descIT: 'GUIDA ANTERIORE', descEN: 'FRONT GUIDE', pn: '241-020-A' },
+                { item: 13, idCode: 'V30.M14X50', qty: 16, descIT: 'VITE T.E. M14X50', descEN: 'SCREW HEX HEAD M14X50', pn: 'SCR-HX-M14-50' },
+                { item: 14, idCode: 'B60.B607.00007', qty: 1, descIT: 'GUIDA POSTERIORE', descEN: 'REAR GUIDE', pn: '241-020-B' },
+                { item: 15, idCode: 'V30.M16X50', qty: 2, descIT: 'VITE T.E. M16X50', descEN: 'SCREW HEX HEAD M16X50', pn: 'SCR-HX-M16-50' },
+                { item: 16, idCode: 'W2060', qty: 1, descIT: 'CILINDRO TRASLATORE DN40/25 C=400mm', descEN: 'CYLINDER DN40/25 C=400mm', pn: '610-000-400' },
+                { item: 17, idCode: 'V30.M16X25', qty: 12, descIT: 'VITE T.E. M16X25', descEN: 'SCREW HEX HEAD M16X25', pn: 'SCR-HX-M16-25' },
+                { item: 18, idCode: 'B60.B607.00008', qty: 1, descIT: 'PIASTRA 43-2V SU CARRELLO 46-4V', descEN: '43-2V PLATE ON 46-4V CARRIAGE', pn: '221-028' },
+                { item: 19, idCode: 'A1053', qty: 1, descIT: 'TESTA 43-2V', descEN: 'ROTARY HEAD 43-2V', pn: '246-000-1', special: true },
+                { item: 20, idCode: 'V50.10MB', qty: 4, descIT: 'NIPPLE INGRASSATORE 10X1', descEN: 'GREASE NIPPLE 10X1', pn: 'FA-STR-100001' },
+                { item: 21, idCode: 'V30.M16X40', qty: 3, descIT: 'VITE T.E. M16X40', descEN: 'SCREW HEX HEAD M16X40', pn: 'SCR-HX-M16-40' },
+                { item: 22, idCode: 'FP1.FP10.00002', qty: 1, descIT: 'VALVOLA DI BLOCCO FDP 1/4', descEN: 'HYDRAULIC STOP VALVE FDP 1/4', pn: 'HYCB100005' },
+                { item: 23, idCode: 'V20.M10XSTD', qty: 4, descIT: 'DADO AUTOBLOCCANTE M10', descEN: 'LOCK NUT M10', pn: 'NUT-LK-M10' },
+                { item: 24, idCode: 'V30.M10X35', qty: 4, descIT: 'VITE T.E. M10X35', descEN: 'SCREW HEX HEAD M10X35', pn: 'SCR-HX-M10-35' },
+                { item: 25, idCode: 'BS1.BS10.00007', qty: 1, descIT: 'ATTACCO DESTRO PER CATENARIA', descEN: 'RIGHT CATENARY FASTENING', pn: 'CHPL100004' },
+                { item: 26, idCode: 'V30.M10X20', qty: 6, descIT: 'VITE T.E. M10X20', descEN: 'SCREW HEX HEAD M10X20', pn: 'SCR-HX-M10-20' },
+                { item: 27, idCode: 'B50.B504.00012', qty: 1, descIT: 'SUPPORTO STANDARD PER CATENARIA', descEN: 'STANDARD FLEXIBLE HOSE SUPPORT', pn: '220-129-3' },
+                { item: 28, idCode: 'BS1.BS10.00002', qty: 1, descIT: 'CATENARIA SR309 - 34 MAGLIE', descEN: 'CATENARY SR309 - 34 UNIT', pn: 'CHPL100007' },
+                { item: 29, idCode: 'BS1.BS10.00006', qty: 1, descIT: 'ATTACCO SINISTRO PER CATENARIA', descEN: 'LEFT CATENARY FASTENING', pn: 'CHPL100003' },
+                { item: 30, idCode: 'B50.B504.00013', qty: 1, descIT: 'MENSOLA PORTA CATENARIA', descEN: 'CHAIN SHELF FOR HEAD', pn: '220-128' },
+                { item: 50, idCode: '500.5009.00006', qty: 1, descIT: 'KIT DI GUARNIZIONI 40/25', descEN: 'SEAL KIT 40/25', pn: '—', special: true }
+              ]
+            },
+            {
+              id: 'B1395', drawing: 'DIS. 561-035/1', type: 'COD.',
+              title: 'RUBBER SLIDE SERIES 4', titleEN: 'Rubber Slide Series 4 — Plastic Carriage Slide',
+              group: 'MAST & CARRIAGE',
+              parts: [
+                { item: 1, idCode: 'B60.B610.00003', qty: 1, descIT: 'PATTINO PER SCORRIMENTO CARRELLO', descEN: 'CARRIAGE SLIDING SLIDE', pn: '561-032-5' },
+                { item: 2, idCode: 'B60.B611.00005', qty: 1, descIT: 'DISTANZIALE PATTINO DI SCORRIMENTO', descEN: 'SLIDING SLIDE SLEEVE', pn: '561-038' },
+                { item: 3, idCode: 'V40.M16X30', qty: 4, descIT: 'VITE T.C. M16X30', descEN: 'SCREW SOCKET HEAD M16X30', pn: 'SCR-SK-M16-30' },
+                { item: 4, idCode: 'B60.B610.00002', qty: 2, descIT: 'RASCHIAPOLVERE PER SLITTA', descEN: 'DUST SCRAPER', pn: '561-199-1' },
+                { item: 5, idCode: 'V21.M20XSTD', qty: 1, descIT: 'DADO M20', descEN: 'NUT M20', pn: 'NUT-HX-M20' },
+                { item: 6, idCode: 'V30.M20X60', qty: 1, descIT: 'VITE T.E. M20X60', descEN: 'SCREW HEX HEAD M20X60', pn: 'SCR-HX-M20-60' },
+                { item: 7, idCode: 'B60.B611.00003', qty: 2, descIT: 'PERNO PER INGRASSAGGIO PATTINO', descEN: 'LUBRICATING SLIDE PIN', pn: '779-033' },
+                { item: 8, idCode: 'V50.10MB', qty: 2, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-STR-100001' },
+                { item: 9, idCode: 'B60.B611.00001', qty: 2, descIT: 'SUPPORTO RASCHIAPOLVERE', descEN: 'DUST SCRAPER SUPPORT', pn: '561-039-1' },
+                { item: 10, idCode: 'B60.B611.00006', qty: 1, descIT: 'PORTA PATTINO IN PLASTICA', descEN: 'STEEL SUPPORT', pn: '561-033-2' },
+                { item: 11, idCode: 'V30.M10X30', qty: 4, descIT: 'VITE T.E. M10X30', descEN: 'SCREW HEX HEAD M10X30', pn: 'SCR-HX-M10-30' },
+                { item: 50, idCode: 'B1395', qty: 1, descIT: 'PATTINO COMPLETO SERIE 4', descEN: 'COMPLETE PLASTIC SLIDE SERIES 4', pn: '—', special: true }
+              ]
+            },
+            {
+              id: 'C1370', drawing: 'DIS. 920-000/1', type: 'COD.',
+              title: 'SLITTA COMPONIBILE ST 120x120', titleEN: 'Standard Modular Mast 120x120 Series 4',
+              group: 'MAST & CARRIAGE',
+              parts: [
+                { item: 1, idCode: 'V50.10MB', qty: 1, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-STR-100001' },
+                { item: 2, idCode: 'B60.B603.00001', qty: 1, descIT: 'PERNO PER RULLO CATENA', descEN: 'CHAIN ROLLER PIN', pn: '901-005-1' },
+                { item: 3, idCode: 'B60.B603.00002', qty: 1, descIT: 'RULLO FOLLE PER CATENA DA 1" DOPPIA', descEN: 'CHAIN ROLLER', pn: '901-004-1' },
+                { item: 4, idCode: 'B60.B603.00003', qty: 1, descIT: 'DISTANZIALE PER PERNO RULLO H4', descEN: 'ROLLER PIN SPACER H4', pn: '901-005-H4' },
+                { item: 5, idCode: '400.4001.00001', qty: 4, descIT: 'CUSCINETTO A SFERE 25-52-15', descEN: 'BALL BEARING 25-52-15', pn: 'SKF-6205' },
+                { item: 6, idCode: '500.5001.00001', qty: 2, descIT: 'GUARNIZIONE SMIM 30-52-7', descEN: 'SMIM SEAL 30-52-7', pn: 'SLSM-30-52-7' },
+                { item: 7, idCode: 'V56.D52', qty: 2, descIT: 'ANELLO ELASTICO SEEGER INTERNI D52', descEN: 'INTERNAL CIRCLIP D52mm', pn: 'RNG-IN-52' },
+                { item: 8, idCode: 'B60.B603.00004', qty: 1, descIT: 'DISTANZIALE PER PERNO RULLO H28', descEN: 'ROLLER PIN SPACER H28', pn: '901-005-H28' },
+                { item: 9, idCode: 'V10.M24X45X3', qty: 1, descIT: 'RONDELLA M24', descEN: 'FLAT WASHER M24', pn: 'WSH-FL-M24-45-3' },
+                { item: 10, idCode: 'V20.M24XSTD', qty: 1, descIT: 'DADO AUTOBLOCCANTE M24', descEN: 'LOCK NUT M24', pn: 'NUT-LK-M24' },
+                { item: 11, idCode: 'C16.ISO16B2.C', qty: 1, descIT: 'CATENA DA 1" DOPPIA', descEN: '1" DOUBLE CHAIN', pn: '16-B2' },
+                { item: 12, idCode: 'B50.B504.00001', qty: 1, descIT: 'PRIMO PEZZO SLITTA COMPONIBILE STD', descEN: 'FIRST PIECE MODULAR MAST', pn: '920-001-1-1715' },
+                { item: 13, idCode: 'V45.M16X50', qty: 12, descIT: 'VITE T.C. M16X50-12K', descEN: 'SCREW SOCKET HEAD M16X50-12K', pn: 'SCR-SK-M16-50-12K' },
+                { item: 14, idCode: 'V40.M14X25', qty: 6, descIT: 'VITE T.C. M14X25', descEN: 'SCREW SOCKET HEAD M14X25', pn: 'SCR-SK-M14-25' },
+                { item: 15, idCode: 'B50.B504.00003', qty: 2, descIT: 'PROLUNGA SLITTA L=500mm', descEN: 'EXTENSION MAST L=500mm', pn: '920-002-500-1' },
+                { item: 16, idCode: 'V20.M12XSTD', qty: 24, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+                { item: 17, idCode: 'V30.M12X40', qty: 24, descIT: 'VITE T.E. M12X40', descEN: 'SCREW HEX HEAD M12X40', pn: 'SCR-HX-M12-40' },
+                { item: 18, idCode: 'B50.B504.00004', qty: 2, descIT: 'PIASTRA PER BLOCCAGGIO PROLUNGA', descEN: 'MAST CLAMPING PLATE', pn: '920-004' },
+                { item: 19, idCode: 'B60.B603.00044', qty: 1, descIT: 'COPERCHIO PER PIGNONE CATENA', descEN: 'CHAIN PINION COVER', pn: '901-003-1' },
+                { item: 20, idCode: 'V30.M10X30', qty: 16, descIT: 'VITE T.E. M10X30', descEN: 'SCREW HEX HEAD M10X30', pn: 'SCR-HX-M10-30' },
+                { item: 21, idCode: '400.4010.00002', qty: 1, descIT: 'CUSCINETTO A SFERE ORIENTABILI', descEN: 'ORIENTAL BALL BEARING', pn: '2207-TVH-2RS1' },
+                { item: 22, idCode: 'V56.D72', qty: 1, descIT: 'ANELLO ELASTICO SEEGER INTERNI D72', descEN: 'INTERNAL CIRCLIP D72', pn: 'RNG-IN-72' },
+                { item: 23, idCode: 'V30.M8X20', qty: 4, descIT: 'VITE T.E. M8X20', descEN: 'SCREW HEX HEAD M8X20', pn: 'SCR-HX-M8-20' },
+                { item: 24, idCode: 'B60.B603.00006', qty: 1, descIT: 'COPERCHIETTO PER COPERTURA SLITTA', descEN: 'MAST COVER', pn: '901-001-C-1' },
+                { item: 25, idCode: 'B50.B504.00005', qty: 1, descIT: 'TESTATA PER SLITTA COMPONIBILE SERIE 4', descEN: 'HEAD MAST FOR MODULAR MAST', pn: '920-003' },
+                { item: 26, idCode: 'B60.B603.00043', qty: 1, descIT: 'PIGNONE PER CATENA DA 1"', descEN: '1" CHAIN PINION', pn: '901-002-1' },
+                { item: 27, idCode: 'RR1.RR10.00001', qty: 1, descIT: 'RIDUTTORE', descEN: 'GEAR REDUCER', pn: 'GERE100001' },
+                { item: 28, idCode: 'V40.M12X40', qty: 2, descIT: 'VITE T.C. M12X40', descEN: 'SCREW SOCKET HEAD M12X40', pn: 'SCR-SK-M12-40' },
+                { item: 29, idCode: 'DA1.DA11.00030', qty: 1, descIT: 'MOTORE IDRAULICO', descEN: 'HYDRAULIC MOTOR', pn: 'HYMO100003' },
+                { item: 30, idCode: 'MV1.MV12.00005', qty: 1, descIT: 'VALVOLA OVERCENTER', descEN: 'OVERCENTER VALVE MOVECO', pn: 'HYCB100008' },
+                { item: 31, idCode: 'B60.B603.00005', qty: 1, descIT: 'COPERCHIO PER PIGNONE CATENA', descEN: 'CHAIN PINION COVER', pn: '901-003' },
+                { item: 32, idCode: '400.4001.00001', qty: 1, descIT: 'CUSCINETTO A SFERE ORIENTABILI', descEN: 'ORIENTAL BALL BEARING', pn: '2204 E-2RS1' },
+                { item: 33, idCode: 'V56.D47', qty: 1, descIT: 'SEEGER PER INTERNI D47mm', descEN: 'INTERNAL CIRCLIP D47mm', pn: 'RNG-IN-47' },
+                { item: 34, idCode: 'B60.B603.00007', qty: 1, descIT: 'PIGNONE PER CATENA DA 1"', descEN: '1" CHAIN PINION', pn: '901-002' },
+                { item: 50, idCode: 'B60.B603.00008', qty: 1, descIT: 'KIT RULLO FOLLE 1"', descEN: 'ROLLER CHAIN KIT', pn: '—', special: true }
+              ]
+            },
+            {
+              id: 'C2065', drawing: 'DIS. 1000-365/0', type: 'COD.',
+              title: 'FALCONE MODULARE SERIE 4', titleEN: 'Modular Derrick Series 4 — 140mm Wheel',
+              group: 'MAST & CARRIAGE',
+              parts: [
+                { item: 1, idCode: 'B50.B505.00041', qty: 1, descIT: 'PROLUNGA FALCONE L=350mm', descEN: 'EXTENSION FOR DERRICK L=350mm', pn: '1000-013' },
+                { item: 2, idCode: 'V30.M12X45', qty: 8, descIT: 'VITE T.E. M12X45', descEN: 'SCREW HEX HEAD M12X45', pn: 'SCR-HX-M12-45' },
+                { item: 3, idCode: 'B50.B505.00042', qty: 1, descIT: 'PROLUNGA FALCONE L=100mm', descEN: 'VARIABLE EXTENSION FOR DERRICK', pn: '1000-334' },
+                { item: 4, idCode: 'V40.M12X20', qty: 2, descIT: 'VITE T.C. M12X20', descEN: 'SCREW SOCKET HEAD M12X20', pn: 'SCR-SK-M12-20' },
+                { item: 5, idCode: 'B60.B615.00022', qty: 1, descIT: 'FLANGIA FISSA PER FALCONE', descEN: 'FIXED FLANGE', pn: '1000-309' },
+                { item: 6, idCode: 'V40.M14X30', qty: 4, descIT: 'VITE T.C. M14X30', descEN: 'SCREW SOCKET HEAD M14X30', pn: 'SCR-SK-M14-30' },
+                { item: 7, idCode: '500.5004.00047', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-4625' },
+                { item: 8, idCode: '400.4005.00001', qty: 1, descIT: 'GABBIA A RULLINI', descEN: 'RADIAL NEEDLE ROLLER BEARING', pn: 'BRRO200001' },
+                { item: 9, idCode: 'V50.10MB', qty: 2, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-GRS-100002' },
+                { item: 10, idCode: 'B60.B615.00023', qty: 1, descIT: 'FLANGIA MOBILE PER GIREVOLE', descEN: 'MOVABLE FLANGE', pn: '1000-310' },
+                { item: 11, idCode: '500.5004.00048', qty: 1, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-4150' },
+                { item: 12, idCode: 'B60.B615.00024', qty: 1, descIT: 'RONDELLA PER GIREVOLE', descEN: 'SWIVEL WASHER', pn: '1000-311' },
+                { item: 13, idCode: 'V20.M27XSTD', qty: 1, descIT: 'DADO AUTOBLOCCANTE M27x2', descEN: 'LOCK NUT M27x2', pn: 'NUT-LK-M27' },
+                { item: 14, idCode: 'B60.B615.00021', qty: 2, descIT: 'RULLO PER SCORRIMENTO FUNE', descEN: 'ROPE SLIDING ROLLER', pn: '1000-308' },
+                { item: 15, idCode: 'V30.M12X180', qty: 2, descIT: 'VITE T.E. M12X180', descEN: 'SCREW HEX HEAD M12X180', pn: 'SCR-HX-M12-180' },
+                { item: 16, idCode: 'B50.B505.00010', qty: 2, descIT: 'CONTENIMENTO PER RULLINI', descEN: 'CONTAINMENT OF ROLLERS', pn: '1000-302' },
+                { item: 17, idCode: 'B60.B615.00033', qty: 1, descIT: 'RUOTA PER FALCONE', descEN: 'DERRICK WHEEL', pn: '1000-319' },
+                { item: 18, idCode: 'B50.B505.00008', qty: 1, descIT: 'STRUTTURA DESTRA FALCONE', descEN: 'DERRICK STRUCTURE RIGHT', pn: '1000-301-1-A' },
+                { item: 19, idCode: 'V20.M12XSTD', qty: 15, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+                { item: 20, idCode: 'V20.M14XSTD', qty: 2, descIT: 'DADO AUTOBLOCCANTE M14', descEN: 'LOCK NUT M14', pn: 'NUT-LK-M14' },
+                { item: 21, idCode: 'B60.B615.00017', qty: 3, descIT: 'PERNO PER RUOTA DI NYLON', descEN: 'PIN FOR DERRICK ROLLER', pn: '1000-304' },
+                { item: 22, idCode: 'B60.B615.00019', qty: 4, descIT: 'RULLO PER SCORRIMENTO FUNE', descEN: 'ROPE SLIDING ROLLER', pn: '1000-306' },
+                { item: 23, idCode: 'B60.B615.00016', qty: 1, descIT: 'RUOTA PER FALCONE', descEN: 'DERRICK WHEEL', pn: '1000-303' },
+                { item: 24, idCode: 'B50.B505.00009', qty: 1, descIT: 'STRUTTURA SINISTRA FALCONE', descEN: 'DERRICK STRUCTURE LEFT', pn: '1000-301-1-B' },
+                { item: 25, idCode: 'V30.M12X90', qty: 2, descIT: 'VITE T.E. M12X90', descEN: 'SCREW HEX HEAD M12X90', pn: 'SCR-HX-M12-90' },
+                { item: 26, idCode: 'V40.M8X10', qty: 2, descIT: 'VITE T.C. M8X10', descEN: 'SCREW SOCKET HEAD M8X10', pn: 'SCR-SK-M8-10' },
+                { item: 27, idCode: 'V40.M12X30', qty: 10, descIT: 'VITE T.C. M12X30', descEN: 'SCREW SOCKET HEAD M12X30', pn: 'SCR-SK-M12-30' },
+                { item: 28, idCode: 'B50.B505.00011', qty: 1, descIT: 'CONTENIMENTO CAVO ELETTRICO', descEN: 'ELECTRIC CABLE CONTAINMENT', pn: '1000-313' },
+                { item: 29, idCode: 'V30.M12X110', qty: 2, descIT: 'VITE T.E. M12X110', descEN: 'SCREW HEX HEAD M12X110', pn: 'SCR-HX-M12-110' },
+                { item: 30, idCode: 'V30.M14X100', qty: 3, descIT: 'VITE T.E. M14X100', descEN: 'SCREW HEX HEAD M14X100', pn: 'SCR-HX-M14-100' }
+              ]
+            },
+            {
+              id: 'D1736', drawing: 'DIS. 850-100/0', type: 'COD.',
+              title: 'MORSA DOPPIA DA 50-324mm', titleEN: 'Double Vice 50-324mm with Mobile Collar',
+              group: 'VICE & CLAMP',
+              parts: [
+                { item: 1, idCode: 'W2058', qty: 4, descIT: 'CILINDRO STANDARD SERRAGGIO DN90/60 C=177mm', descEN: 'CYLINDER DN90/60 C=177mm', pn: '630-000-177' },
+                { item: 2, idCode: 'V30.M12X55', qty: 16, descIT: 'VITE T.E. M12X55', descEN: 'SCREW HEX HEAD M12X55', pn: 'SCR-HX-M12-55' },
+                { item: 3, idCode: 'V40.M10X30', qty: 8, descIT: 'VITE T.C. M10X30', descEN: 'SCREW SOCKET HEAD M10X30', pn: 'SCR-SK-M10-30' },
+                { item: 4, idCode: 'B50.B506.00003', qty: 1, descIT: 'STRUTTURA MORSA FISSA DA 335 SERIE 4', descEN: 'FIXED VICE STRUCTURE 335', pn: '850-009' },
+                { item: 5, idCode: 'WA1.WA11.00008', qty: 2, descIT: 'VALVOLA DIVISORE DI FLUSSO VDFR 38-24', descEN: 'FLOW DIVIDER VALVE VDFR 38-24', pn: 'HYCH100003' },
+                { item: 6, idCode: 'V40.M6X90', qty: 2, descIT: 'VITE T.C. M6X90', descEN: 'SCREW SOCKET HEAD M6X90', pn: 'SCR-SK-M6-90' },
+                { item: 7, idCode: 'B60.B608.00008', qty: 1, descIT: 'COLLARE IMBULLONATO', descEN: 'BOLTED COLLAR', pn: '850-010' },
+                { item: 8, idCode: 'B50.B506.00005', qty: 1, descIT: 'PIASTRA D\'APPOGGIO', descEN: 'RAIL CHAIR', pn: '850-004' },
+                { item: 9, idCode: 'V30.M16X30', qty: 4, descIT: 'VITE T.E. M16X30', descEN: 'SCREW HEX HEAD M16X30', pn: 'SCR-HX-M16-30' },
+                { item: 10, idCode: 'WA1.WA11.00012', qty: 2, descIT: 'VALVOLA DI BLOCCO VBPSL 38 p4', descEN: 'CHECK VALVE 3/8', pn: 'HYCH100001' },
+                { item: 11, idCode: 'V40.M6X45', qty: 4, descIT: 'VITE T.C. M6X45', descEN: 'SCREW SOCKET HEAD M6X45', pn: 'SCR-SK-M6-45' },
+                { item: 12, idCode: '300.3004.00001', qty: 1, descIT: 'ACCUMULATORE AZOTO', descEN: 'ACCUMULATOR NITROGEN', pn: 'ACNI100001' },
+                { item: 13, idCode: 'V40.M10X25', qty: 1, descIT: 'VITE T.C. M10X25', descEN: 'SCREW SOCKET HEAD M10X25', pn: 'SCR-SK-M10-25' },
+                { item: 14, idCode: 'V30.M10X30', qty: 8, descIT: 'VITE T.E. M10X30', descEN: 'SCREW HEX HEAD M10X30', pn: 'SCR-HX-M10-30' },
+                { item: 15, idCode: 'B60.B608.00002', qty: 2, descIT: 'FLANGIA PER CILINDRO SVITATORE', descEN: 'FLANGE UNSCREWING CYLINDER', pn: '273-006' },
+                { item: 16, idCode: 'V55.D30', qty: 2, descIT: 'SEEGER PER ALBERO D30mm', descEN: 'EXTERNAL RING D30mm', pn: 'RNG-EX-30' },
+                { item: 17, idCode: 'B60.B608.00003', qty: 1, descIT: 'PERNO PER ATTACCO SVITATORE', descEN: 'UNSCREWING CYLINDER PIN', pn: '240-060' },
+                { item: 18, idCode: 'W2059', qty: 1, descIT: 'CILINDRO SVITATORE DN80/45 C=65mm', descEN: 'CYLINDER DN80/45 C=65mm', pn: '626-000-65' },
+                { item: 19, idCode: 'V30.M12X30', qty: 15, descIT: 'VITE T.E. M12X30', descEN: 'SCREW HEX HEAD M12X30', pn: 'SCR-HX-M12-30' },
+                { item: 20, idCode: 'V30.M12X40', qty: 8, descIT: 'VITE T.E. M12X40', descEN: 'SCREW HEX HEAD M12X40', pn: 'SCR-HX-M12-40' },
+                { item: 21, idCode: 'V50.10MB', qty: 6, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-STR-100001' },
+                { item: 22, idCode: 'V20.M12XSTD', qty: 20, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+                { item: 23, idCode: 'V30.M12X100', qty: 4, descIT: 'VITE T.E. M12X100', descEN: 'SCREW HEX HEAD M12X100', pn: 'SCR-HX-M12-100' },
+                { item: 24, idCode: 'B60.B608.00009', qty: 4, descIT: 'PORTA GRIFFE MORSA 335', descEN: 'JAW BLOCK 335', pn: '820-010' },
+                { item: 25, idCode: 'B60.B608.00001', qty: 8, descIT: 'GRIFFA DI SERRAGGIO', descEN: 'JAW', pn: '251-065' },
+                { item: 26, idCode: 'B50.B506.00004', qty: 1, descIT: 'STRUTTURA SVITATORE 335 SERIE 4', descEN: 'UNSCREWER VICE STRUCTURE 335', pn: '850-012' },
+                { item: 27, idCode: 'B60.B608.00010', qty: 1, descIT: 'FLANGIA IMBULLONATA PER SVITATORE 335', descEN: 'BOLTED FLANGE FOR UNSCREWING 335', pn: '850-011' },
+                { item: 28, idCode: 'V40.M12X40', qty: 7, descIT: 'VITE T.C. M12X40', descEN: 'SCREW SOCKET HEAD M12X45', pn: 'SCR-SK-M12-45' },
+                { item: 29, idCode: 'B60.B608.00011', qty: 1, descIT: 'RALLA GUIDA PER MORSA 335', descEN: '335 VICE BEARING DISC GUIDE', pn: '850-013' },
+                { item: 50, idCode: '500.5009.00003', qty: 4, descIT: 'KIT DI GUARNIZIONI DN90/60', descEN: 'SEAL KIT DN90/60', pn: '—', special: true },
+                { item: 60, idCode: '500.5009.00002', qty: 1, descIT: 'KIT DI GUARNIZIONI DN80/45', descEN: 'SEAL KIT DN80/45', pn: '—', special: true }
+              ]
+            },
+            {
+              id: 'E2040', drawing: 'DIS. 446-240/0', type: 'COD.',
+              title: 'EQUIP. GRUPPO PORTA SONDA', titleEN: 'Drill Tower Group Equipment — T46',
+              group: 'DRILL TOWER',
+              parts: [
+                { item: 1, idCode: 'B60.B606.00016', qty: 1, descIT: 'RALLA PER TORRETTA', descEN: 'BEARING DISC FOR TURRET', pn: '240-004' },
+                { item: 2, idCode: '500.5004.00049', qty: 1, descIT: 'GUARNIZIONE OR SPECIALE 3.35 L=1516', descEN: 'SPECIAL ORING SEAL', pn: 'SLOR-SP009' },
+                { item: 3, idCode: 'V50.10MB', qty: 18, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-GRS-100002' },
+                { item: 4, idCode: '500.5004.00050', qty: 1, descIT: 'GUARNIZIONE OR SPECIALE 3.53 L=1100', descEN: 'SPECIAL ORING SEAL', pn: 'SLOR-SP010' },
+                { item: 5, idCode: 'B60.B606.00001', qty: 1, descIT: 'FLANGIA PER FISSAGGIO RALLA', descEN: 'FLANGE FIXING BEARING DISC', pn: '240-005' },
+                { item: 6, idCode: 'V30.M16X70', qty: 16, descIT: 'VITE T.E. M16X70', descEN: 'SCREW HEX HEAD M16X70', pn: 'SCR-HX-M16-70' },
+                { item: 7, idCode: 'B50.B503.00064', qty: 1, descIT: 'TORRETTA PORTA SONDA', descEN: 'TURRET BRINGS BORE', pn: '446-002-1' },
+                { item: 8, idCode: 'V35.M16X60', qty: 12, descIT: 'VITE T.E. M16X60 10.9', descEN: 'SCREW HEX HEAD M16X60 10.9', pn: 'SCR-HX-M16-60 10.9' },
+                { item: 9, idCode: 'B60.B606.00169', qty: 1, descIT: 'PERNO D40 L=173', descEN: 'PIN D40 L=173', pn: '446-014' },
+                { item: 10, idCode: 'V55.D40', qty: 2, descIT: 'ANELLO ELASTICO SEEGER D40mm', descEN: 'EXTERNAL RING D40mm', pn: 'RNG-EX-40' },
+                { item: 11, idCode: 'W2117', qty: 1, descIT: 'CILINDRO DN100/56 C=140mm', descEN: 'CYLINDER DN100/56 C=140mm', pn: '616-000-275' },
+                { item: 12, idCode: 'B50.B503.00001', qty: 1, descIT: 'BRACCIO PER SNODO', descEN: 'ARM FOR PIVOT', pn: '446-003-1' },
+                { item: 13, idCode: 'B60.B606.00168', qty: 1, descIT: 'PERNO D40 L=306', descEN: 'PIN D40 L=306', pn: '446-013-1' },
+                { item: 14, idCode: '', qty: 1, descIT: 'COPIGLIA', descEN: 'SPLIT PIN LOCKING', pn: 'PIN-6-40' },
+                { item: 15, idCode: 'W2120', qty: 1, descIT: 'CILINDRO DN 65/36 C=500mm', descEN: 'CYLINDER DN 65/36 C=500mm', pn: '613-000-500' },
+                { item: 16, idCode: 'V55.D30', qty: 3, descIT: 'SEEGER PER ALBERO D30mm', descEN: 'EXTERNAL RING D30mm', pn: 'RNG-EX-30' },
+                { item: 17, idCode: 'B60.B606.00079', qty: 2, descIT: 'PERNO PER CILINDRO', descEN: 'CYLINDER PIN', pn: '200-010' },
+                { item: 18, idCode: 'B60.B606.00091', qty: 1, descIT: 'PERNO PER ROTAZIONE TORRETTA', descEN: 'PIN', pn: '240-007' },
+                { item: 19, idCode: 'B60.B606.00006', qty: 1, descIT: 'PERNO D50 L=403', descEN: 'PIN D50 L=403', pn: '446-008-1' },
+                { item: 20, idCode: '', qty: 1, descIT: 'VALVOLA CONTROBILANCIAMENTO', descEN: 'COUNTERBALANCE VALVE', pn: 'HYCB100002' },
+                { item: 21, idCode: 'B60.B606.00007', qty: 2, descIT: 'RONDELLA', descEN: 'WASHER', pn: '446-015-D' },
+                { item: 22, idCode: 'B60.B606.00005', qty: 2, descIT: 'RONDELLA', descEN: 'WASHER', pn: '446-015-B' },
+                { item: 23, idCode: 'V25.M40X1.5', qty: 2, descIT: 'GHIERA M40x1.5', descEN: 'BUSH M40x1.5', pn: 'GH-M40x1.5' },
+                { item: 24, idCode: 'V55.D35', qty: 2, descIT: 'SEEGER ESTERNO 35', descEN: 'EXTERNAL CIRCLIP 35', pn: 'RNG-EX-35' },
+                { item: 25, idCode: 'W2073', qty: 2, descIT: 'CILINDRO DN80/45 C=480mm', descEN: 'CYLINDER DN80/45 C=480mm', pn: '615-006-480' },
+                { item: 26, idCode: 'B60.B606.00003', qty: 1, descIT: 'PERNO D50 L=293', descEN: 'PIN D50 L=293', pn: '446-010' },
+                { item: 27, idCode: 'V40.M8X16', qty: 2, descIT: 'VITE T.C. M8X16', descEN: 'SCREW SOCKET HEAD M8x16', pn: 'SCR-SK-M8-16' },
+                { item: 28, idCode: 'B60.B606.00009', qty: 2, descIT: 'PERNO D35 L=137', descEN: 'PIN D35 L=137', pn: '446-009' },
+                { item: 29, idCode: 'B50.B503.00062', qty: 1, descIT: 'SNODO CENTRALE', descEN: 'CENTRAL PIVOT', pn: '446-003-1' },
+                { item: 30, idCode: 'IM2.IM20.00006', qty: 1, descIT: 'RALLA 360°', descEN: 'SLEWING DRIVE', pn: 'SLDR100001' },
+                { item: 31, idCode: 'B60.B606.00004', qty: 2, descIT: 'RONDELLA', descEN: 'WASHER', pn: '446-015-C' },
+                { item: 32, idCode: 'V45.M16X70', qty: 26, descIT: 'VITE T.C. M16X70-12K', descEN: 'SCREW SOCKET HEAD M16X70-12K', pn: 'SCR-SK-M16-70-12K' },
+                { item: 33, idCode: 'MS1.MS11.00001', qty: 1, descIT: 'VALVOLA DI BLOCCO MS KPBR 250 1D3', descEN: 'STOP VALVE MS KPBR 250 1D3', pn: 'HYCB100006' },
+                { item: 34, idCode: 'MS1.MS10.00024', qty: 1, descIT: 'MOTORE MR315 con FRENO', descEN: 'MR 315 MOTOR', pn: 'HYMO100016' },
+                { item: 35, idCode: 'V40.M12X35', qty: 2, descIT: 'VITE T.C. M12X35', descEN: 'SCREW SOCKET HEAD M12X35', pn: 'SCR-SK-M12-35' },
+                { item: 36, idCode: 'B60.B606.00032', qty: 1, descIT: 'DISTANZIALE RALLA-CONTROSLITTA', descEN: 'BEARING-DRILLING COUNTERMAST SPACER', pn: '326-003-1' },
+                { item: 37, idCode: 'V45.M16X50', qty: 4, descIT: 'VITE T.C. M16X50-12K', descEN: 'SCREW SOCKET HEAD M16X50-12K', pn: 'SCR-SK-M16-50-12K' },
+                { item: 38, idCode: 'B50.B503.00024', qty: 1, descIT: 'CONTROSLITTA', descEN: 'DRILLING COUNTERMAST', pn: '240-158-1' },
+                { item: 39, idCode: 'B60.B606.00039', qty: 1, descIT: 'GUIDA LUNGA DESTRA', descEN: 'LONG RIGHT SLIDE', pn: '240-054-B' },
+                { item: 40, idCode: 'V30.M10X30', qty: 4, descIT: 'VITE T.E. M10X30', descEN: 'SCREW HEX HEAD M10X30', pn: 'SCR-HX-M10-30' },
+                { item: 41, idCode: 'B50.B501.00247', qty: 3, descIT: 'FERMO PER PASSAPARETE', descEN: 'STOP BULKHEAD', pn: '315-346-1' },
+                { item: 42, idCode: 'V40.M6X20', qty: 6, descIT: 'VITE T.C. M6X20', descEN: 'SCREW SOCKET HEAD M6X20', pn: 'SCR-SK-M6-20' },
+                { item: 43, idCode: 'B50.B501.00218', qty: 1, descIT: 'PORTA CATENARIA SU CONTROSLITTA', descEN: 'BULKHEAD ON COUNTERMAST', pn: '220-200' },
+                { item: 44, idCode: 'BS1.BS10.00007', qty: 1, descIT: 'ATTACCO DESTRO PER CATENARIA', descEN: 'RIGHT CATENARY FASTENING', pn: 'CHPL100004' },
+                { item: 45, idCode: 'BS1.BS10.00006', qty: 1, descIT: 'ATTACCO SINISTRO PER CATENARIA', descEN: 'LEFT CATENARY FASTENING', pn: 'CHPL100003' },
+                { item: 46, idCode: 'B60.B606.00038', qty: 4, descIT: 'GUIDA CORTA', descEN: 'SHORT SLIDE', pn: '240-054-A' },
+                { item: 47, idCode: 'B50.B503.00063', qty: 1, descIT: 'FORCELLA', descEN: 'FORK', pn: '446-018-3' },
+                { item: 48, idCode: 'W2064', qty: 1, descIT: 'CILINDRO DN50/36 C=405mm', descEN: 'CYLINDER DN50/36 C=405mm', pn: '611-000-405' },
+                { item: 49, idCode: 'V30.M12X50', qty: 20, descIT: 'VITE T.E. M12X50', descEN: 'SCREW HEX HEAD M12X50', pn: 'SCR-HX-M12-50' },
+                { item: 50, idCode: 'V20.M12XSTD', qty: 19, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+                { item: 51, idCode: 'B60.B606.00033', qty: 1, descIT: 'PERNO PER CILINDRO', descEN: 'CYLINDER PIN', pn: '200-011' },
+                { item: 52, idCode: 'B60.B606.00035', qty: 2, descIT: 'COPERCHIO PER PERNO', descEN: 'PIN COVER', pn: '240-159' },
+                { item: 53, idCode: 'B60.B606.00040', qty: 1, descIT: 'GUIDA LUNGA SINISTRA', descEN: 'LEFT LONG SLIDE', pn: '240-054-C' },
+                { item: 54, idCode: 'V35.M16X50', qty: 12, descIT: 'VITE T.E. M16X50 10.9', descEN: 'SCREW HEX HEAD M16X50 10.9', pn: 'SCR-HX-M16-50 10.9' },
+                { item: 60, idCode: '500.5009.00008', qty: 1, descIT: 'KIT DI GUARNIZIONI DN65/36', descEN: 'SEAL KIT DN65/36', pn: '—', special: true },
+                { item: 70, idCode: '500.5009.00012', qty: 1, descIT: 'KIT DI GUARNIZIONI DN100/56', descEN: 'SEAL KIT DN100/56', pn: '—', special: true },
+                { item: 80, idCode: '500.5009.00002', qty: 2, descIT: 'KIT DI GUARNIZIONI DN80/45', descEN: 'SEAL KIT DN80/45', pn: '—', special: true },
+                { item: 90, idCode: '500.5009.00007', qty: 1, descIT: 'KIT DI GUARNIZIONI DN50/36', descEN: 'SEAL KIT DN50/36', pn: '—', special: true }
+              ]
+            },
+            {
+              id: 'G2052', drawing: 'DIS. 446-245/0', type: 'COD.',
+              title: 'EQUIP. GRUPPO TELAIO CON MOTORE DEUTZ', titleEN: 'Chassis Group Equipment — Deutz Engine',
+              group: 'CHASSIS & ENGINE',
+              parts: [
+                { item: 1, idCode: 'V50.10MB', qty: 2, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-GRS-100002' },
+                { item: 2, idCode: 'B60.B606.00017', qty: 2, descIT: 'PERNO PER BLOCCAGGIO STABILIZZATORE', descEN: 'PIN', pn: '251-057' },
+                { item: 3, idCode: 'B50.B502.00003', qty: 5, descIT: 'MORSETTO CHIUSURA STABILIZZATORE', descEN: 'STABILIZER HYDRAULIC CYLINDER', pn: '369-003-A' },
+                { item: 4, idCode: 'V30.M12X45', qty: 30, descIT: 'VITE T.E. M12X45', descEN: 'SCREW HEX HEAD M12X45', pn: 'SCR-HX-M12-45' },
+                { item: 5, idCode: 'B50.B501.00001', qty: 2, descIT: 'BRACCIO STABILIZZATORE ANTERIORE', descEN: 'FRONT STABILIZER ARM', pn: '446-017' },
+                { item: 6, idCode: 'V30.M16X40', qty: 8, descIT: 'VITE T.E. M16X40', descEN: 'SCREW HEX HEAD M16X40', pn: 'SCR-HX-M16-40' },
+                { item: 7, idCode: 'B60.B606.00047', qty: 2, descIT: 'RONDELLA STABILIZZATORE', descEN: 'STABILIZER WASHER', pn: '305-021' },
+                { item: 8, idCode: 'V20.M12XSTD', qty: 31, descIT: 'DADO AUTOBLOCCANTE M12', descEN: 'LOCK NUT M12', pn: 'NUT-LK-M12' },
+                { item: 9, idCode: 'B60.B606.00173', qty: 2, descIT: 'PERNO PER BRACCIO STABILIZZATORE', descEN: 'PIN FOR STABILIZER ARM', pn: '305-020' },
+                { item: 10, idCode: 'V30.M20X80', qty: 8, descIT: 'VITE T.E. M20X80', descEN: 'SCREW HEX HEAD M20X80', pn: 'SCR-HX-M20-80' },
+                { item: 11, idCode: 'SM2.SM20.00003', qty: 1, descIT: 'SOTTOCARRO ALLARGABILE 1000-1400', descEN: 'VARIABLE UNDERTRACK 1000-1400', pn: '446-072-1' },
+                { item: 12, idCode: 'B50.B501.00500', qty: 1, descIT: 'TELAIO', descEN: 'CHASSIS', pn: '446-118-2' },
+                { item: 13, idCode: 'WA1.WA10.00006', qty: 1, descIT: 'DISTRIBUTORE COMANDI SD6/11', descEN: 'DISTRIBUTOR SD6/11', pn: 'SD6-11' },
+                { item: 14, idCode: 'B50.B501.00506', qty: 1, descIT: 'MENSOLA PORTA DISTRIBUTORE COMANDI', descEN: 'BRACKET BRINGS COMMANDS DISTRIBUTOR', pn: '446-055-1' },
+                { item: 15, idCode: 'WA1.WA10.00008', qty: 1, descIT: 'DISTRIBUTORE PER CINGOLO', descEN: 'TRACK DISTRIBUTOR', pn: 'SD6-2' },
+                { item: 16, idCode: 'V30.M10X16', qty: 16, descIT: 'VITE T.E. M10X16', descEN: 'SCREW HEX HEAD M10X16', pn: 'SCR-HX-M10-16' },
+                { item: 17, idCode: 'B50.B501.00502', qty: 1, descIT: 'LAMIERA PER ARIA MOTORE', descEN: 'AIR MOTOR SHEET METAL', pn: '446-118-B' },
+                { item: 18, idCode: 'B50.B502.00024', qty: 2, descIT: 'BRACCIO POSTERIORE STABILIZZATORE', descEN: 'REAR STABILIZER ARM', pn: '446-119' },
+                { item: 19, idCode: 'B50.B517.00014', qty: 1, descIT: 'PORTA RADIATORE POSTERIORE', descEN: 'REAR RADIATOR SUPPORT', pn: '446-199' },
+                { item: 20, idCode: 'V30.M10X35', qty: 4, descIT: 'VITE T.E. M10X35', descEN: 'SCREW HEX HEAD M10X35', pn: 'SCR-HX-M10-35' },
+                { item: 21, idCode: 'V30.M16X50', qty: 14, descIT: 'VITE T.E. M16X50', descEN: 'SCREW HEX HEAD M16X50', pn: 'SCR-HX-M16-50' },
+                { item: 22, idCode: 'B50.B501.00509', qty: 1, descIT: 'PIANTANA POSTERIORE', descEN: 'REAR PEDESTAL', pn: '446-165' },
+                { item: 23, idCode: 'V30.M12X30', qty: 4, descIT: 'VITE T.E. M12X30', descEN: 'SCREW HEX HEAD M12X30', pn: 'SCR-HX-M12-30' },
+                { item: 24, idCode: 'B50.B501.00510', qty: 1, descIT: 'TELAIO PORTA BATTERIA', descEN: 'BATTERY SUPPORT', pn: '446-166-1' },
+                { item: 25, idCode: '', qty: 1, descIT: 'BATTERIA 12V 80Ah', descEN: 'BATTERY 12V 80Ah', pn: 'ELBA100003' },
+                { item: 26, idCode: 'B50.B501.00511', qty: 1, descIT: 'CARTER COPRI BATTERIA', descEN: 'BATTERY COVER', pn: '446-186' },
+                { item: 27, idCode: 'B50.B501.00210', qty: 1, descIT: 'PORTA LAMPEGGIANTE PICCOLO', descEN: 'FLASH SUPPORT', pn: '220-177' },
+                { item: 28, idCode: 'M10.M102.00005', qty: 1, descIT: 'LAMPEGGIANTE', descEN: 'ELECTRIC LIGHT', pn: 'ELLI100003' },
+                { item: 29, idCode: '', qty: 1, descIT: 'MANICOTTO PER SENSORE FILTRO', descEN: 'RUBBER SLEEVE FILTER SENSOR', pn: 'ENAC100002' },
+                { item: 30, idCode: '', qty: 1, descIT: 'FILTRO ARIA', descEN: 'AIR FILTER', pn: 'ENGI100005-4' },
+                { item: 31, idCode: 'B50.B501.00082', qty: 1, descIT: 'PORTA POMPA ACQUA', descEN: 'WATER PUMP SUPPORT', pn: '446-220' },
+                { item: 32, idCode: 'IN1.IN10.00001', qty: 1, descIT: 'POMPA ACQUA COMPLETA', descEN: 'COMPLETE WATER PUMP', pn: 'WTPM100002' },
+                { item: 33, idCode: 'B50.B501.00521', qty: 1, descIT: 'GRIGLIA POSTERIORE PER RADIATORE', descEN: 'REAR GRILL FOR RADIATOR', pn: '220-118-A' },
+                { item: 34, idCode: 'B50.B501.00516', qty: 1, descIT: 'COFANATURA PER MOTORE', descEN: 'CASING FOR ENGINE', pn: '220-117-1' },
+                { item: 35, idCode: '350.3506.00001', qty: 5, descIT: 'CERNIERA', descEN: 'SURFACE HINGE', pn: 'HIN-SF-100001' },
+                { item: 36, idCode: 'B50.B501.00061', qty: 1, descIT: 'PORTA LATERALE Dx CON MANIGLIA', descEN: 'POWER UNIT SIDE DOOR', pn: '220-118-C' },
+                { item: 37, idCode: 'B50.B501.00528', qty: 1, descIT: 'PORTA FILTRO ARIA', descEN: 'AIR FILTER SUPPORT', pn: '315-300' },
+                { item: 38, idCode: 'B50.B501.00525', qty: 1, descIT: 'GRIGLIA PER PORTA', descEN: 'GRILL FOR DOOR', pn: '220-118-E' },
+                { item: 39, idCode: 'B50.B501.00061', qty: 1, descIT: 'PORTA LATERALE CON GRIGLIA', descEN: 'POWER UNIT SIDE DOOR', pn: '220-118-D' },
+                { item: 40, idCode: 'B50.B501.00522', qty: 1, descIT: 'GRIGLIA ANT. PER COFANATURA', descEN: 'FRONT GRILL FOR CASING', pn: '220-118-B' },
+                { item: 41, idCode: 'DE2.DE20.00001', qty: 1, descIT: 'MOTORE TD2.9 STAGE 5', descEN: 'ENGINE TD2.9 STAGE 5', pn: 'ENGI100005' },
+                { item: 42, idCode: 'B50.B501.00366', qty: 1, descIT: 'PROTEZIONE RADIATORE "EMMEGI 2030K"', descEN: '"EMMEGI 2030K" RADIATOR PROTECTION', pn: '354-221' },
+                { item: 43, idCode: 'EM1.EM10.00004', qty: 1, descIT: 'RADIATORE 2030K CON PIEDINI', descEN: '2030K RADIATOR WITH FOOT', pn: 'RDT-2030K+P' },
+                { item: 44, idCode: 'B50.B501.00537', qty: 1, descIT: 'COPERCHIO PER SCATOLA PEDALE', descEN: 'BOX PEDAL COVER', pn: '446-167-2-B' },
+                { item: 45, idCode: 'B50.B501.00536', qty: 1, descIT: 'SCATOLA PER PEDALE', descEN: 'BOX FOR PEDAL', pn: '446-167-2-A' },
+                { item: 46, idCode: 'V20.M10XSTD', qty: 4, descIT: 'DADO AUTOBLOCCANTE M10', descEN: 'LOCK NUT M10', pn: 'NUT-LK-M10' },
+                { item: 47, idCode: 'W1240', qty: 4, descIT: 'CILINDRO STABILIZZATORE DN65/45 C=470mm', descEN: 'CYLINDER STABILIZER DN65/45 C=470mm', pn: '621-000-470' },
+                { item: 48, idCode: 'WA1.WA10.00013', qty: 1, descIT: 'DISTRIBUTORE DPC130/2', descEN: 'DISTRIBUTOR DPC130/2', pn: 'DPC 130-2+S' },
+                { item: 49, idCode: 'B50.B501.00533', qty: 1, descIT: 'PIASTRA "A" PER MOTORE', descEN: 'PLATE "A" FOR MOTOR', pn: '315-298-A' },
+                { item: 50, idCode: 'M10.M106.00004', qty: 1, descIT: 'STACCABATTERIA', descEN: 'BATTERY OFF', pn: 'ELSW300002' },
+                { item: 51, idCode: 'B50.B501.00246', qty: 1, descIT: 'SUPPORTO PER STACCABATTERIA', descEN: 'BATTERY OFF SUPPORT', pn: '220-172-1' },
+                { item: 52, idCode: 'B50.B501.00237', qty: 1, descIT: 'PORTA CENTRALINA "EMR"', descEN: '"EMR" SUPPORT', pn: '315-302-1' },
+                { item: 53, idCode: 'B50.B501.00535', qty: 1, descIT: 'PIASTRA "C" PER MOTORE', descEN: 'PLATE "C" FOR MOTOR', pn: '315-298-C' },
+                { item: 54, idCode: '', qty: 1, descIT: 'EMR PER TD2.9', descEN: 'TD2.9 EMR', pn: 'ENGI100005-3' },
+                { item: 55, idCode: 'V40.M10X30', qty: 16, descIT: 'VITE T.C. M10X30', descEN: 'SCREW SOCKET HEAD M10X30', pn: 'SCR-SK-M10-30' },
+                { item: 56, idCode: 'B50.B501.00534', qty: 1, descIT: 'PIASTRA "B" PER MOTORE', descEN: 'PLATE "B" FOR MOTOR', pn: '315-298-B' },
+                { item: 57, idCode: 'M10.M102.00001', qty: 1, descIT: 'PULSANTE EMERGENZA', descEN: 'EMERGENCY STOP SWITCH', pn: 'ELSW200001' },
+                { item: 58, idCode: 'B50.B501.00078', qty: 1, descIT: 'PORTA POMPETTA GASOLIO', descEN: 'DIESEL PUMP SUPPORT', pn: '362-104' },
+                { item: 59, idCode: 'DE3.DE32.00008', qty: 1, descIT: 'POMPETTA DEL GASOLIO', descEN: 'DIESEL PUMP', pn: 'ENGI100005-6' },
+                { item: 60, idCode: 'DE3.DE31.00004', qty: 1, descIT: 'PRE FILTRO GASOLIO TD 2.9', descEN: 'DIESEL PRE FILTER TD 2.9', pn: 'ENGI100005-2' },
+                { item: 61, idCode: 'B50.B501.00507', qty: 1, descIT: 'PROTEZIONE COMANDI FISSI', descEN: 'PROTECTION COMMANDS DISTRIBUTOR', pn: '446-126' },
+                { item: 62, idCode: 'WA1.WA11.00006', qty: 1, descIT: 'DEVIATORE DI FLUSSO', descEN: 'DEVIATOR', pn: 'DF10-3-3' },
+                { item: 63, idCode: 'B50.B512.00009', qty: 1, descIT: 'RACCOGLITORE DELL\'OLIO', descEN: 'OIL DRAINAGE TRAY', pn: '250-015' },
+                { item: 64, idCode: 'B50.B501.00531', qty: 1, descIT: 'COPERTURA PER FILTRI', descEN: 'FILTER COVER', pn: '446-169-1-A' },
+                { item: 65, idCode: '', qty: 2, descIT: 'VOLANTINO M8', descEN: 'KNOB M8', pn: 'VLT10003' },
+                { item: 66, idCode: 'B50.B501.00532', qty: 1, descIT: 'LAMIERA PER ISPEZIONE', descEN: 'INSPECTION PLATE', pn: '446-169-1-B' },
+                { item: 67, idCode: 'DE3.DE31.00003', qty: 1, descIT: 'FILTRO GASOLIO TCD 2.9', descEN: 'DIESEL FILTER TCD 2.9', pn: 'ENGI100005-1' },
+                { item: 68, idCode: 'B50.B501.00527', qty: 1, descIT: 'PORTA FILTRI GASOLIO', descEN: 'DIESEL FILTER SUPPORT', pn: '315-303' },
+                { item: 69, idCode: 'V30.M12X35', qty: 8, descIT: 'VITE T.E. M12X35', descEN: 'SCREW HEX HEAD M12X35', pn: 'SCR-HX-M12-35' },
+                { item: 70, idCode: 'B50.B501.00083', qty: 4, descIT: 'DISTANZIALE PER TDC 2.9', descEN: 'SPACER PER MOTOR', pn: '354-204' },
+                { item: 71, idCode: '', qty: 1, descIT: 'POMPE IDRAULICHE', descEN: 'HYDRAULIC GEAR PUMP', pn: 'HYPM100008' },
+                { item: 72, idCode: 'B50.B501.00503', qty: 1, descIT: 'PIANTANA FERMA SLITTA', descEN: 'PEDESTAL STOPPING MAST', pn: '446-025-A' },
+                { item: 73, idCode: '', qty: 1, descIT: 'CAMPANA MOTORE', descEN: 'ENGINE HOUSING', pn: 'ENHO100002' },
+                { item: 74, idCode: 'FW1.FW12.00001', qty: 1, descIT: 'BLOCCO DI SICUREZZA CON Y10', descEN: 'SAFETY MANIFOLD', pn: 'HYCH100007' },
+                { item: 75, idCode: 'B50.B501.00530', qty: 1, descIT: 'CARTER PER BLOCCO DI SICUREZZA Y10', descEN: 'SAFETY MANIFOLD COVER', pn: '446-203' },
+                { item: 76, idCode: 'B60.B606.00171', qty: 1, descIT: 'PERNO D29.5 L=105', descEN: 'PIN D29.5 L=105', pn: '446-027' },
+                { item: 77, idCode: '', qty: 1, descIT: 'COPIGLIA', descEN: 'SPLIT PIN LOCKING', pn: 'PIN-6-40' },
+                { item: 78, idCode: 'B50.B501.00504', qty: 1, descIT: 'BRACCIO REGOLABILE PIANTANA', descEN: 'PEDESTAL ADJUSTABLE ARM', pn: '446-025-B' },
+                { item: 79, idCode: 'V55.D30', qty: 1, descIT: 'SEEGER PER ALBERO D30mm', descEN: 'EXTERNAL RING D30mm', pn: 'RNG-EX-30' },
+                { item: 80, idCode: 'B60.B606.00170', qty: 1, descIT: 'PERNO D30 L=93', descEN: 'PIN D30 L=93', pn: '446-026' },
+                { item: 81, idCode: 'B50.B501.00505', qty: 1, descIT: 'MENSOLA PER APPOGGIO SLITTA', descEN: 'BRACKET FOR MAST SUPPORT', pn: '446-208' },
+                { item: 82, idCode: '', qty: 1, descIT: 'POMPA DELL\'ACQUA', descEN: 'WATER PUMP', pn: 'WTPM100008' },
+                { item: 83, idCode: 'B50.B501.00242', qty: 2, descIT: 'SUPPORTO PER PIASTRA POMPA ACQUA', descEN: 'WATER PUMP SUPPORT', pn: '220-103-B' },
+                { item: 84, idCode: 'B50.B501.00241', qty: 1, descIT: 'PIASTRA PER POMPA ACQUA', descEN: 'WATER PUMP PLATE', pn: '220-103-A' },
+                { item: 85, idCode: 'B50.B501.00529', qty: 1, descIT: 'LAMIERA SUPERIORE COFANATURA', descEN: 'UPPER PLATE FOR CASING', pn: '220-132-3' },
+                { item: 86, idCode: 'B50.B515.00015', qty: 1, descIT: 'TUBO DI SCARICO SU MARMITTA', descEN: 'DRAINPIPE ON MUFFLER', pn: '315-313-A-1' },
+                { item: 87, idCode: 'B50.B515.00020', qty: 1, descIT: 'COPERTURA PER TUBO DI SCARICO', descEN: 'COVER FOR DRAINPIPE', pn: '315-314' },
+                { item: 88, idCode: 'B50.B515.00016', qty: 1, descIT: 'TUBO DI SCARICO ESTERNO', descEN: 'EXTERNAL DRAINPIPE', pn: '315-313-B-1' },
+                { item: 89, idCode: 'B50.B501.00518', qty: 1, descIT: 'COPERCHIO PER ISPEZIONE RADIATORE', descEN: 'RADIATOR COVER', pn: '446-194-2-B' },
+                { item: 90, idCode: '500.5009.00001', qty: 4, descIT: 'KIT DI GUARNIZIONI DN65/45', descEN: 'SEAL KIT DN65/45', pn: '—', special: true }
+              ]
+            },
+            {
+              id: 'G2135', drawing: 'DIS. 220-310/0', type: 'COD.',
+              title: 'COFANATURA INSONORIZZATA SERIE 4', titleEN: 'Sound-proofed Casing for Series 4',
+              group: 'CHASSIS & ENGINE',
+              parts: [
+                { item: 1, idCode: 'B50.B501.00516', qty: 1, descIT: 'COFANATURA PER MOTORE TCD 2.9 TIER 4 FINAL', descEN: 'CASING FOR ENGINE', pn: '220-117-2' },
+                { item: 2, idCode: 'B50.B501.01424', qty: 1, descIT: 'LAMIERA LATERALE PER COFANATURA', descEN: 'SIDE COVER PLATE', pn: '220-314' },
+                { item: 3, idCode: 'B50.B501.00529', qty: 1, descIT: 'LAMIERA SUPERIORE COFANATURA', descEN: 'UPPER PLATE FOR CASING', pn: '220-132-3' },
+                { item: 4, idCode: 'V30.M10X16', qty: 24, descIT: 'VITE T.E. M10X16', descEN: 'SCREW HEX HEAD M10X16', pn: 'SCR-HX-M10-16' },
+                { item: 5, idCode: 'B50.B501.00518', qty: 1, descIT: 'COPERCHIO PER ISPEZIONE RADIATORE', descEN: 'RADIATOR COVER', pn: '446-194-2-B' },
+                { item: 6, idCode: 'B50.B501.01425', qty: 1, descIT: 'LAMIERA POSTERIORE COFANATURA', descEN: 'REAR SIDE PLATE', pn: '220-313' },
+                { item: 7, idCode: '350.3506.00001', qty: 4, descIT: 'CERNIERA', descEN: 'HINGE', pn: 'HIN-SF-100001' },
+                { item: 8, idCode: 'B50.B501.01422', qty: 1, descIT: 'PORTA LATERALE Destra', descEN: 'RIGHT SIDE DOOR', pn: '220-312' },
+                { item: 9, idCode: '350.3507.00004', qty: 2, descIT: 'SERRATURA PORTA', descEN: 'DOOR LOCK', pn: 'HAND100005' },
+                { item: 10, idCode: 'B50.B501.01423', qty: 1, descIT: 'PORTA LATERALE Sinistra', descEN: 'LEFT SIDE DOOR', pn: '220-311' }
+              ]
+            },
+            {
+              id: 'M2036', drawing: 'DIS. 446-334/0', type: 'COD.',
+              title: 'MOTORE COMPLETO TCD 2.9 75HP STAGE 5', titleEN: 'Complete Engine TCD 2.9 75Hp - Stage 5',
+              group: 'CHASSIS & ENGINE',
+              parts: [
+                { item: 1, idCode: 'DE2.DE20.00001', qty: 1, descIT: 'MOTORE TD2.9 STAGE 5', descEN: 'ENGINE TD2.9 STAGE 5', pn: 'ENGI100005' },
+                { item: 2, idCode: 'V30.M12X35', qty: 8, descIT: 'VITE T.E. M12X35', descEN: 'SCREW HEX HEAD M12X35', pn: 'SCR-HX-M12-35' },
+                { item: 3, idCode: '', qty: 1, descIT: 'EMR PER TD2.9', descEN: 'TD2.9 EMR', pn: 'ENGI100005-3' },
+                { item: 4, idCode: 'B50.B501.00237', qty: 1, descIT: 'PORTA CENTRALINA "EMR"', descEN: '"EMR" SUPPORT', pn: '315-302-1' },
+                { item: 5, idCode: 'M10.M106.00004', qty: 1, descIT: 'STACCABATTERIA', descEN: 'BATTERY OFF', pn: 'ELSW300002' },
+                { item: 6, idCode: 'B50.B501.00246', qty: 1, descIT: 'SUPPORTO PER STACCABATTERIA', descEN: 'BATTERY OFF SUPPORT', pn: '220-172-1' },
+                { item: 7, idCode: 'B50.B501.00533', qty: 1, descIT: 'PIASTRA "A" PER MOTORE', descEN: 'PLATE "A" FOR MOTOR', pn: '315-298-A' },
+                { item: 8, idCode: 'B50.B501.00535', qty: 1, descIT: 'PIASTRA "C" PER MOTORE', descEN: 'PLATE "C" FOR MOTOR', pn: '315-298-C' },
+                { item: 9, idCode: 'B50.B501.00534', qty: 1, descIT: 'PIASTRA "B" PER MOTORE', descEN: 'PLATE "B" FOR MOTOR', pn: '315-298-B' },
+                { item: 10, idCode: 'B50.B501.00083', qty: 4, descIT: 'DISTANZIALE PER TDC 2.9', descEN: 'SPACER PER MOTOR', pn: '354-204' },
+                { item: 11, idCode: 'TW1.TW11.00001', qty: 1, descIT: 'CAMPANA MOTORE', descEN: 'ENGINE HOUSING', pn: 'ENHO100002' },
+                { item: 12, idCode: '', qty: 1, descIT: 'POMPE IDRAULICHE', descEN: 'HYDRAULIC GEAR PUMP', pn: 'HYPM100008' },
+                { item: 13, idCode: 'B50.B501.00078', qty: 1, descIT: 'PORTA POMPETTA GASOLIO', descEN: 'DIESEL PUMP SUPPORT', pn: '362-104' },
+                { item: 14, idCode: 'DE3.DE32.00008', qty: 1, descIT: 'POMPETTA DEL GASOLIO', descEN: 'DIESEL PUMP', pn: 'ENGI100005-6' },
+                { item: 15, idCode: '350.3501.00022', qty: 1, descIT: 'FILTRO GASOLIO (DIESEL FILTER)', descEN: 'DIESEL FILTER', pn: 'DIFI100002' },
+                { item: 16, idCode: 'DE3.DE31.00003', qty: 1, descIT: 'FILTRO GASOLIO TCD 2.9', descEN: 'DIESEL FILTER TCD 2.9', pn: 'ENGI100005-1' },
+                { item: 17, idCode: 'B50.B501.00527', qty: 1, descIT: 'PORTA FILTRI GASOLIO', descEN: 'DIESEL FILTER SUPPORT', pn: '315-303' },
+                { item: 18, idCode: 'DE3.DE31.00004', qty: 1, descIT: 'PRE FILTRO GASOLIO TD 2.9', descEN: 'DIESEL PRE FILTER TD 2.9', pn: 'ENGI100005-2' },
+                { item: 19, idCode: 'B50.B515.00015', qty: 1, descIT: 'TUBO DI SCARICO SU MARMITTA', descEN: 'DRAINPIPE ON MUFFLER', pn: '315-313-A-1' },
+                { item: 20, idCode: 'B50.B515.00020', qty: 1, descIT: 'COPERTURA PER TUBO DI SCARICO', descEN: 'COVER FOR DRAINPIPE', pn: '315-314' },
+                { item: 21, idCode: 'B50.B515.00016', qty: 1, descIT: 'TUBO DI SCARICO ESTERNO', descEN: 'EXTERNAL DRAINPIPE', pn: '315-313-B-1' },
+                { item: 22, idCode: 'DE3.DE32.00002', qty: 1, descIT: 'TUBO GOMMA ASPIRAZIONE D70XL490', descEN: 'RUBBER TUBE INTAKE D70XL490', pn: 'ENAC100004-5' },
+                { item: 23, idCode: '', qty: 1, descIT: 'MANICOTTO PER SENSORE FILTRO', descEN: 'RUBBER SLEEVE FILTER SENSOR', pn: 'ENAC100002' },
+                { item: 24, idCode: '350.3502.00011', qty: 1, descIT: 'SUPPORTO FILTRO ARIA TD2.9', descEN: 'AIR FILTER SUPPORT TD2.9', pn: 'ENGI100005-4A' },
+                { item: 25, idCode: '350.3502.00001', qty: 1, descIT: 'GRUPPO FILTRO COMPLETO', descEN: 'COMPLETE AIR FILTER', pn: 'ENGI100005-4B' },
+                { item: 26, idCode: '350.3502.00004', qty: 1, descIT: 'COPERCHIO FILTRO ARIA', descEN: 'AIR FILTER CAP', pn: 'ENGI100005-7' },
+                { item: 27, idCode: '350.3502.00005', qty: 1, descIT: 'ELEMENTO FILTRO 1 TD2.9', descEN: 'FILTER ELEMENT 1 TD2.9', pn: 'ENGI100005-4E' },
+                { item: 28, idCode: '350.3502.00006', qty: 1, descIT: 'ELEMENTO FILTRO 2 TD2.9', descEN: 'FILTER ELEMENT 2 TD2.9', pn: 'ENGI100005-4F' },
+                { item: 29, idCode: 'DE.DE31.00009', qty: 2, descIT: 'AMMORTIZZATORE RADIATORE', descEN: 'SILOT BLOCK', pn: '—' }
+              ]
+            },
+            {
+              id: 'G1080', drawing: 'DIS. 446-042/0', type: 'COD.',
+              title: 'PANNELLO PORTA COMANDI', titleEN: 'Control Panel without Cage — T46',
+              group: 'CONTROLS',
+              parts: [
+                { item: 1, idCode: 'V30.M16X40', qty: 4, descIT: 'VITE T.E. M16X40', descEN: 'SCREW HEX HEAD M16X40', pn: 'SCR-HX-M16-40' },
+                { item: 2, idCode: 'B50.B508.00002', qty: 1, descIT: 'PERNO PER FISS. BRACCIO COMANDI', descEN: 'CONTROL ARM FIXING PIN', pn: '446-036-1' },
+                { item: 3, idCode: 'B50.B508.00003', qty: 1, descIT: 'PROLUNGA PER BRACCIO COMANDI', descEN: 'CONTROL ARM EXTENSION', pn: '446-037-2' },
+                { item: 4, idCode: 'B60.B614.00004', qty: 2, descIT: 'RONDELLA DISTANZIALE', descEN: 'SPACE WASHER', pn: '446-038-A' },
+                { item: 5, idCode: 'V20.M36XSTD', qty: 2, descIT: 'DADO AUTOBLOCCANTE DA M36', descEN: 'LOCK NUT M36', pn: 'NUT-LK-M36' },
+                { item: 6, idCode: 'B50.B508.00005', qty: 1, descIT: 'CARTER DI COPERTURA TUBI', descEN: 'TUBES COVERING CASING', pn: '446-045' },
+                { item: 7, idCode: 'V30.M8X20', qty: 12, descIT: 'VITE T.E. M8X20', descEN: 'SCREW HEX HEAD M8X20', pn: 'SCR-HX-M8-20' },
+                { item: 8, idCode: 'V30.M10X25', qty: 2, descIT: 'VITE T.E. M10X25', descEN: 'SCREW HEX HEAD M10X25', pn: 'SCR-HX-M10-25' },
+                { item: 9, idCode: 'B50.B508.00006', qty: 1, descIT: 'ATTACCO IMPIANTO ARIA-ACQUA', descEN: 'ATTACHMENT AIR-WATER SYSTEM', pn: '446-152' },
+                { item: 10, idCode: 'V50.10MB', qty: 2, descIT: 'INGRASSATORE M10X1', descEN: 'GREASE NIPPLE M10X1', pn: 'FA-STR-100001' },
+                { item: 11, idCode: 'WA1.WA10.00015', qty: 2, descIT: 'DISTRIBUTORE SD14/1', descEN: 'SD14/1 DISTRIBUTOR', pn: 'SD14-1' },
+                { item: 12, idCode: 'WA1.WA10.00018', qty: 1, descIT: 'DISTRIBUTORE SD11/3', descEN: 'SD11/3 DISTRIBUTOR', pn: 'SD11-3' },
+                { item: 13, idCode: 'WA1.WA11.00015', qty: 1, descIT: 'VALVOLA REGOLATORE DI PRESSIONE', descEN: 'HYDRAULIC CHECK VALVE', pn: 'HYCH100005' },
+                { item: 14, idCode: 'WA1.WA10.00004', qty: 1, descIT: 'DISTRIBUTORE SD5/6', descEN: 'SD5/6 DISTRIBUTOR', pn: 'SD5-6' },
+                { item: 15, idCode: 'B50.B508.00004', qty: 1, descIT: 'MENSOLA MOBILE PORTA COMANDI', descEN: 'MOVABLE BRACKET CONTROL BRINGS', pn: '446-038-1' },
+                { item: 16, idCode: 'FP1.FP10.00004', qty: 2, descIT: 'VALVOLA DI CONTROLLO GIRI', descEN: 'HYDRAULIC CHECK VALVE', pn: 'HYCH100004' },
+                { item: 17, idCode: 'B50.B508.00001', qty: 1, descIT: 'CARTER PER COPERTURA COMANDI', descEN: 'COMMANDS COVERING CASING', pn: '446-040' },
+                { item: 18, idCode: 'M10.M102.00001', qty: 1, descIT: 'PULSANTE EMERGENZA', descEN: 'EMERGENCY STOP SWITCH', pn: 'ELSW200001' },
+                { item: 19, idCode: '300.3007.00001', qty: 4, descIT: 'MANOMETRO OLEOIDRAULICO', descEN: 'HYDRAULIC GAUGE', pn: 'HYGA100001' },
+                { item: 20, idCode: 'V40.M4X10', qty: 12, descIT: 'VITE T.C. M4X10', descEN: 'SCREW SOCKET HEAD M4X10', pn: 'SCR-SK-M4-10' },
+                { item: 21, idCode: 'WA1.WA11.00001', qty: 1, descIT: 'VALVOLA REGOLATORE DI PRESSIONE', descEN: 'HYDRAULIC CHECK VALVE', pn: 'HYCH100006' },
+                { item: 22, idCode: 'V40.M6X16', qty: 4, descIT: 'VITE T.C. M6X16', descEN: 'SCREW SOCKET HEAD M6X16', pn: 'SCR-SK-M6-16' },
+                { item: 23, idCode: 'V40.M8X20', qty: 4, descIT: 'VITE T.C. M8X20', descEN: 'SCREW SOCKET HEAD M8X20', pn: 'SCR-SK-M8-20' },
+                { item: 24, idCode: 'B50.B508.00007', qty: 1, descIT: 'PROTEZIONE LEVE COMANDI', descEN: 'COMMANDS LEVERS PROTECTION', pn: '446-023-1' }
+              ]
+            },
+            {
+              id: 'L2043', drawing: 'DIS. 446-242/0', type: 'COD.',
+              title: 'EQUIP. SERBATOIO DELL\'OLIO CON DEUTZ', titleEN: 'Hydraulic Oil Tank Equipment — Deutz',
+              group: 'HYDRAULIC SYSTEM',
+              parts: [
+                { item: 1, idCode: '300.3001.00006', qty: 1, descIT: 'FILTRO OLIO RITORNO', descEN: 'RETURN OIL FILTER', pn: 'HYFI200002' },
+                { item: 2, idCode: 'V30.M10X25', qty: 8, descIT: 'VITE T.E. M10X25', descEN: 'SCREW HEX HEAD M10X25', pn: 'SCR-HX-M10-25' },
+                { item: 3, idCode: '300.3001.00005', qty: 1, descIT: 'CARTUCCIA HHC01329', descEN: 'CARTRIDGE HHC01329', pn: 'HYFI100009' },
+                { item: 4, idCode: '500.5004.00074', qty: 2, descIT: 'GUARNIZIONE OR', descEN: 'ORING SEAL', pn: 'SLOR-SP019' },
+                { item: 5, idCode: '300.3003.00001', qty: 1, descIT: 'TAPPO RIEMPIMENTO', descEN: 'OIL TANK CAP', pn: 'HYAC100002' },
+                { item: 6, idCode: 'B60.B614.00005', qty: 1, descIT: 'FLANGIA SERBATOIO OLIO', descEN: 'OIL TANK FLANGE', pn: '251-056-B' },
+                { item: 7, idCode: '300.3003.00002', qty: 1, descIT: 'INDICATORE LIVELLO E TEMPERATURA OLIO', descEN: 'OIL TEMPERATURE LEVEL', pn: 'HYAC100001' },
+                { item: 8, idCode: 'B50.B513.00016', qty: 1, descIT: 'SERBATOIO DELL\'OLIO', descEN: 'OIL TANK', pn: '446-064-1' },
+                { item: 9, idCode: '', qty: 1, descIT: 'TAPPO 3-4IN GAS', descEN: 'PLUG 3-4IN GAS', pn: 'FA-PLG-100005' },
+                { item: 10, idCode: '300.3001.00010', qty: 4, descIT: 'FILTRO ASPIRAZIONE', descEN: 'SUCTION STRAINER', pn: 'HYFI100008' },
+                { item: 11, idCode: 'V30.M10X16', qty: 4, descIT: 'VITE T.E. M10X16', descEN: 'SCREW HEX HEAD M10X16', pn: 'SCR-HX-M10-16' },
+                { item: 12, idCode: 'B50.B501.00497', qty: 1, descIT: 'CARTER PER PANNELLO ACCENSIONE', descEN: 'IGNITION PANEL CASING', pn: '220-166-1' },
+                { item: 13, idCode: 'M10.M102.00016', qty: 1, descIT: 'SEMAFORO', descEN: 'SEMAPHORE INDICATOR', pn: 'ELLI100004' },
+                { item: 14, idCode: 'M10.M105.00001', qty: 1, descIT: 'PANNELLO ACCENSIONE', descEN: 'ENGINE START BOX', pn: 'ENGI100005-5' }
+              ]
+            },
+            {
+              id: 'L2045', drawing: 'DIS. 315-398/0', type: 'COD.',
+              title: 'EQUIP. SERBATOIO GASOLIO CON APV21', titleEN: 'Diesel Tank Equipment with APV21',
+              group: 'HYDRAULIC SYSTEM',
+              parts: [
+                { item: 1, idCode: 'B50.B514.00012', qty: 1, descIT: 'SERBATOIO DEL GASOLIO', descEN: 'DIESEL TANK', pn: '315-027-2' },
+                { item: 2, idCode: '350.3501.00001', qty: 1, descIT: 'TAPPO GASOLIO M80x2', descEN: 'PLUG CAP M80x2', pn: 'FA-CAP-100001' },
+                { item: 3, idCode: '', qty: 3, descIT: 'LIVELLO DA 3/4 GAS', descEN: 'PLUG 3/4 GAS FOR LEVEL', pn: 'FA-PLG-100011' },
+                { item: 4, idCode: 'B50.B501.00499', qty: 1, descIT: 'CARTER PER SCATOLA ELETTRICA', descEN: 'ELECTRIC BOX COVER', pn: '446-168' },
+                { item: 5, idCode: 'V30.M10X20', qty: 3, descIT: 'VITE T.E. M10X20', descEN: 'SCREW HEX HEAD M10X20', pn: 'SCR-HX-M10-20' },
+                { item: 6, idCode: '', qty: 1, descIT: 'SCATOLA ELETTRICA APV21', descEN: 'ELECTRIC BOX APV21', pn: 'ELBX100004' }
+              ]
+            },
+            {
+              id: 'S2054', drawing: 'DIS. 515-500/0', type: 'COD.',
+              title: 'KIT FUNE EMERGENZA PER SLITTA 120x120', titleEN: 'Emergency Cable Kit for Mast 120x120',
+              group: 'SAFETY',
+              parts: [
+                { item: 1, idCode: 'B50.B504.00062', qty: 1, descIT: 'SUPPORTO ANT. EMERGENZA CON FILO', descEN: 'EMERGENCY FRONT SUPPORT', pn: '358-108-B-1' },
+                { item: 2, idCode: 'M10.M102.00002', qty: 1, descIT: 'DISPOSITIVO ARRESTO D\'EMERGENZA', descEN: 'EMERGENCY STOP DEVICE', pn: 'ELSF1001' },
+                { item: 3, idCode: 'V40.M6X20', qty: 2, descIT: 'VITE T.C. M6X20', descEN: 'SCREW SOCKET HEAD M6X20', pn: 'SCR-SK-M6-20' },
+                { item: 4, idCode: '', qty: 1, descIT: 'FUNE D\'EMERGENZA', descEN: 'EMERGENCY CABLE', pn: 'ELSF1005' },
+                { item: 5, idCode: '', qty: 1, descIT: 'MORSETTO PER BLOCCAGGIO FUNE', descEN: 'CABLE LOCKING CLAMP', pn: 'ELSF1007' },
+                { item: 6, idCode: 'M10.M102.00006', qty: 1, descIT: 'MOLLA PER CORDINA', descEN: 'CORD SPRING', pn: 'ELSF1002' },
+                { item: 7, idCode: '', qty: 1, descIT: 'TIRANTE PER FUNE EMERGENZA', descEN: 'TIE-ROD FOR EMERGENCY CABLE', pn: 'ELSF1003' },
+                { item: 8, idCode: 'B50.B504.00061', qty: 1, descIT: 'SUPPORTO POST. EMERGENZA CON FILO', descEN: 'EMERGENCY REAR SUPPORT', pn: '358-108-A-1' },
+                { item: 9, idCode: 'V20.M8XSTD', qty: 1, descIT: 'DADO AUTOBLOCCANTE M8', descEN: 'LOCK NUT M8', pn: 'NUT-LK-M8' },
+                { item: 10, idCode: 'M10.M102.00008', qty: 1, descIT: 'KIT FUNE EMERGENZA', descEN: 'KIT MICRO EMERGENCY ROPE', pn: '—', special: true }
+              ]
+            },
+            {
+              id: 'E1037', drawing: 'H44 =', type: 'COD.',
+              title: 'CARRELLO CINGOLATO ALLARGABILE T44', titleEN: 'Adjustable-Width Tracked Carriage for T44',
+              group: 'UNDERCARRIAGE',
+              parts: [
+                { item: 1, idCode: '', qty: 1, descIT: 'STRUTTURA DEL CARRO CINGOLATO', descEN: 'CRAWLER CARRIER STRUCTURE', pn: '—' },
+                { item: 2, idCode: '', qty: 1, descIT: 'VITE', descEN: 'SCREW', pn: '—' },
+                { item: 3, idCode: '', qty: 1, descIT: 'CILINDRO IDRAULICO MODIFICA CARREGGIATA', descEN: 'HYDRAULIC CYLINDER FOR TRACK-GAUGE', pn: '—' },
+                { item: 4, idCode: '', qty: 1, descIT: 'PERNI PER CILINDRI IDRAULICI H3', descEN: 'PINS FOR H3 HYDRAULIC CYLINDERS', pn: '—' },
+                { item: 5, idCode: '', qty: 1, descIT: 'PERNI PER CILINDRI IDRAULICI H3', descEN: 'PINS FOR H3 HYDRAULIC CYLINDERS', pn: '—' },
+                { item: 6, idCode: '', qty: 1, descIT: 'COPIGLIA', descEN: 'SPLIT PIN', pn: '—' },
+                { item: 8, idCode: '', qty: 1, descIT: 'STRUTTURA DEL CINGOLO DESTRO', descEN: 'RIGHT TRACK STRUCTURE', pn: '—' },
+                { item: 9, idCode: '', qty: 1, descIT: 'STRUTTURA DEL CINGOLO SINISTRO', descEN: 'LEFT TRACK STRUCTURE', pn: '—' },
+                { item: 10, idCode: '', qty: 1, descIT: 'RUOTA TENDICINGOLO', descEN: 'TRACK IDLER', pn: '—' },
+                { item: 11, idCode: '', qty: 1, descIT: 'MOTORE IDRAULICO', descEN: 'HYDRAULIC MOTOR', pn: '—' },
+                { item: 12, idCode: '', qty: 1, descIT: 'VALVOLA DI BLOCCO PER MOTORE H11', descEN: 'STOP VALVE FOR H11 HYDRAULIC MOTOR', pn: '—' },
+                { item: 13, idCode: '', qty: 1, descIT: 'RIDUTTORE', descEN: 'REDUCTION GEAR', pn: '—' },
+                { item: 14, idCode: '', qty: 1, descIT: 'RUOTA DENTATA', descEN: 'SPROCKET WHEEL', pn: '—' },
+                { item: 15, idCode: '', qty: 1, descIT: 'VITE', descEN: 'SCREW', pn: '—' },
+                { item: 16, idCode: '', qty: 1, descIT: 'CARTER', descEN: 'GUARD', pn: '—' },
+                { item: 17, idCode: '', qty: 1, descIT: 'VITE', descEN: 'SCREW', pn: '—' },
+                { item: 18, idCode: '', qty: 1, descIT: 'RULLO INFERIORE', descEN: 'LOWER ROLLER', pn: '—' },
+                { item: 19, idCode: '', qty: 1, descIT: 'PERNO', descEN: 'PIN', pn: '—' },
+                { item: 20, idCode: '', qty: 1, descIT: 'ROSETTA PIANA', descEN: 'FLAT WASHER', pn: '—' },
+                { item: 21, idCode: '', qty: 1, descIT: 'DADO', descEN: 'NUT', pn: '—' },
+                { item: 22, idCode: '', qty: 1, descIT: 'CINGOLO IN GOMMA', descEN: 'RUBBER TRACK', pn: '—' },
+                { item: 50, idCode: '', qty: 1, descIT: 'MAGLIA PER CINGOLO IN ACCIAIO', descEN: 'SHOE FOR STEEL TRACK', pn: '—' }
+              ]
+            }
+          ]
+        },
+        {
+          id: 'T19', sn: '—', year: '—', engine: '—',
+          assemblies: [
+            {
+              id: 'T19-001', drawing: 'TBD', type: 'COD.',
+              title: 'T19 — DATI IN CORSO DI INSERIMENTO', titleEN: 'T19 — Data entry in progress',
+              group: 'GENERAL',
+              parts: [
+                { item: 1, idCode: '', qty: 1, descIT: 'Caricare il manuale del T19 per popolare questa sezione', descEN: 'Load T19 manual to populate this section', pn: '—' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const GROUPS = {
+      'ROTARY HEAD ASSEMBLY': { icon: '⚙', color: '#f59e0b' },
+      'MAST & CARRIAGE': { icon: '↕', color: '#3b82f6' },
+      'VICE & CLAMP': { icon: '🔩', color: '#8b5cf6' },
+      'DRILL TOWER': { icon: '⬆', color: '#06b6d4' },
+      'CHASSIS & ENGINE': { icon: '🔧', color: '#10b981' },
+      'HYDRAULIC SYSTEM': { icon: '💧', color: '#0ea5e9' },
+      'CONTROLS': { icon: '🎮', color: '#f97316' },
+      'SAFETY': { icon: '⚠', color: '#ef4444' },
+      'UNDERCARRIAGE': { icon: '▣', color: '#6b7a88' },
+      'GENERAL': { icon: '📋', color: '#6b7a88' }
+    };
+
+    function highlight(text, q) {
+      if (!q || !text) return text;
+      const idx = text.toLowerCase().indexOf(q.toLowerCase());
+      if (idx < 0) return text;
+      return React.createElement('span', null,
+        text.slice(0, idx),
+        React.createElement('mark', null, text.slice(idx, idx + q.length)),
+        text.slice(idx + q.length)
+      );
+    }
+
+    function App({ selModel }) {
+      const [selAssembly, setSelAssembly] = useState(null);
+      const [search, setSearch] = useState('');
+      const [openGroups, setOpenGroups] = useState({});
+      const [highlightRow, setHighlightRow] = useState(null);
+
+      const model = useMemo(() => DB.models.find(m => m.id === selModel), [selModel]);
+
+      const groupedAssemblies = useMemo(() => {
+        const g = {};
+        model.assemblies.forEach(a => {
+          if (!g[a.group]) g[a.group] = [];
+          g[a.group].push(a);
+        });
+        return g;
+      }, [model]);
+
+      const assembly = useMemo(() =>
+        selAssembly ? model.assemblies.find(a => a.id === selAssembly) : null,
+        [selAssembly, model]
+      );
+
+      const filteredParts = useMemo(() => {
+        if (!assembly) return [];
+        if (!search.trim()) return assembly.parts;
+        const q = search.toLowerCase();
+        return assembly.parts.filter(p =>
+          (p.idCode || '').toLowerCase().includes(q) ||
+          (p.descIT || '').toLowerCase().includes(q) ||
+          (p.descEN || '').toLowerCase().includes(q) ||
+          (p.pn || '').toLowerCase().includes(q) ||
+          String(p.item).includes(q)
+        );
+      }, [assembly, search]);
+
+      const totalParts = useMemo(() => model.assemblies.reduce((s, a) => s + a.parts.length, 0), [model]);
+
+      const toggleGroup = useCallback(g => {
+        setOpenGroups(prev => ({ ...prev, [g]: !prev[g] }));
+      }, []);
+
+      const selectAssembly = useCallback(id => {
+        setSelAssembly(id);
+        setSearch('');
+        setHighlightRow(null);
+      }, []);
+
+      return React.createElement('div', { className: 'main-layout' },
+        // SIDEBAR
+        React.createElement('div', { className: 'sidebar' },
+          React.createElement('div', { className: 'sidebar-header' },
+            React.createElement('div', { className: 'sidebar-title' }, 'COMPONENT TREE')
+          ),
+          React.createElement('div', { className: 'sidebar-scroll' },
+            Object.entries(groupedAssemblies).map(([grp, asms]) => {
+              const open = openGroups[grp] !== false;
+              const grpInfo = GROUPS[grp] || { icon: '📋', color: '#888' };
+              return React.createElement('div', { key: grp, className: 'model-group' },
+                React.createElement('div', {
+                  className: 'model-header',
+                  style: { borderLeftColor: grpInfo.color },
+                  onClick: () => toggleGroup(grp)
+                },
+                  React.createElement('span', { style: { fontSize: '13px' } }, grpInfo.icon),
+                  React.createElement('span', { className: 'model-name', style: { color: grpInfo.color } }, grp),
+                  React.createElement('span', { className: 'model-desc' }, asms.length + ' asm'),
+                  React.createElement('span', {
+                    style: { color: 'var(--text2)', fontSize: '10px', marginLeft: '4px', transition: 'transform 0.15s', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none' }
+                  }, '▶')
+                ),
+                open && asms.map(a =>
+                  React.createElement('div', {
+                    key: a.id,
+                    className: 'tree-item' + (selAssembly === a.id ? ' active' : ''),
+                    onClick: () => selectAssembly(a.id)
+                  },
+                    React.createElement('div', { className: 'tree-indent', style: { width: '12px' } }),
+                    React.createElement('div', { className: 'tree-content' },
+                      React.createElement('div', { className: 'tree-label' }, a.title),
+                      React.createElement('div', { className: 'tree-code' }, a.id + ' · ' + a.drawing)
+                    ),
+                    React.createElement('div', { className: 'tree-parts-badge' }, a.parts.length)
+                  )
+                )
+              );
+            })
+          )
+        ),
+        // CONTENT
+        React.createElement('div', { className: 'content' },
+          assembly
+            ? React.createElement(React.Fragment, null,
+              React.createElement('div', { className: 'content-header' },
+                React.createElement('div', { className: 'asm-title-row' },
+                  React.createElement('span', { className: 'asm-code-big' }, assembly.id),
+                  React.createElement('span', { className: 'asm-name' }, assembly.title),
+                  assembly.special && React.createElement('span', { className: 'tag tag-amber' }, 'SPECIAL')
+                ),
+                React.createElement('div', { className: 'asm-meta' },
+                  React.createElement('span', { className: 'asm-meta-item' }, 'Drawing: ', React.createElement('span', null, assembly.drawing)),
+                  React.createElement('span', { className: 'asm-meta-item' }, 'Description: ', React.createElement('span', null, assembly.titleEN)),
+                  React.createElement('span', { className: 'asm-meta-item' }, 'Parts: ', React.createElement('span', null, assembly.parts.length)),
+                  React.createElement('span', { className: 'asm-meta-item' }, 'Group: ', React.createElement('span', null, assembly.group))
+                )
+              ),
+              React.createElement('div', { style: { padding: '8px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg1)', flexShrink: 0, display: 'flex', gap: '8px', alignItems: 'center' } },
+                React.createElement('span', { style: { color: 'var(--text2)', fontSize: '11px', marginRight: '4px' } }, '🔍'),
+                React.createElement('input', {
+                  type: 'text', placeholder: 'Search part number, code, description...',
+                  value: search, onChange: e => setSearch(e.target.value),
+                  style: { flex: 1, maxWidth: '360px', fontSize: '12px' }
+                }),
+                search && React.createElement('span', {
+                  style: { fontSize: '11px', color: 'var(--text2)', cursor: 'pointer' },
+                  onClick: () => setSearch('')
+                }, `${filteredParts.length} results  ✕`)
+              ),
+              React.createElement('div', { className: 'table-wrap' },
+                React.createElement('table', { className: 'parts-table' },
+                  React.createElement('thead', null,
+                    React.createElement('tr', null,
+                      React.createElement('th', { className: 'th-num' }, 'Item'),
+                      React.createElement('th', { style: { width: '170px' } }, 'ID Code'),
+                      React.createElement('th', null, 'Description (IT / EN)'),
+                      React.createElement('th', { className: 'th-qty' }, 'Qty'),
+                      React.createElement('th', { style: { width: '140px' } }, 'Part Number')
+                    )
+                  ),
+                  React.createElement('tbody', null,
+                    filteredParts.length === 0
+                      ? React.createElement('tr', null,
+                        React.createElement('td', { colSpan: 5, style: { textAlign: 'center', padding: '32px', color: 'var(--text2)' } },
+                          'No parts match your search'))
+                      : filteredParts.map(p =>
+                        React.createElement('tr', {
+                          key: p.item,
+                          className: (p.special ? 'special-row ' : '') + (highlightRow === p.item ? 'highlighted' : ''),
+                          onMouseEnter: () => setHighlightRow(p.item),
+                          onMouseLeave: () => setHighlightRow(null)
+                        },
+                          React.createElement('td', { className: 'cell-item' }, p.item),
+                          React.createElement('td', null,
+                            React.createElement('div', { className: 'cell-code' }, p.idCode ? highlight(p.idCode, search) : React.createElement('span', { style: { color: 'var(--text2)' } }, '—'))
+                          ),
+                          React.createElement('td', null,
+                            React.createElement('div', { className: 'cell-desc-it' }, highlight(p.descIT, search)),
+                            React.createElement('div', { className: 'cell-desc-en' }, highlight(p.descEN, search))
+                          ),
+                          React.createElement('td', { className: 'cell-qty' }, p.qty),
+                          React.createElement('td', null,
+                            React.createElement('span', { className: 'cell-partnum' + (p.special ? ' special' : '') },
+                              highlight(p.pn, search))
+                          )
+                        )
+                      )
+                  )
+                )
+              )
+            )
+            : React.createElement('div', { className: 'welcome' },
+              React.createElement('div', { className: 'welcome-icon' }, '⚙'),
+              React.createElement('div', { className: 'welcome-title' }, 'Beretta Electronic Parts Catalog'),
+              React.createElement('div', { className: 'welcome-sub' }, 'Select an assembly from the navigation tree on the left to view its Bill of Materials'),
+              React.createElement('div', { className: 'welcome-stats' },
+                React.createElement('div', { className: 'stat-box' },
+                  React.createElement('div', { className: 'stat-num' }, model.assemblies.length),
+                  React.createElement('div', { className: 'stat-lbl' }, 'Assemblies')
+                ),
+                React.createElement('div', { className: 'stat-box' },
+                  React.createElement('div', { className: 'stat-num' }, totalParts),
+                  React.createElement('div', { className: 'stat-lbl' }, 'Total Parts')
+                ),
+                React.createElement('div', { className: 'stat-box' },
+                  React.createElement('div', { className: 'stat-num' }, model.sn !== '—' ? model.sn : '—'),
+                  React.createElement('div', { className: 'stat-lbl' }, 'Serial No.')
+                )
+              )
+            )
+        )
+      );
+    }
+
+    // TOP BAR + FULL LAYOUT
+    function Root() {
+      const [selModel, setSelModel] = useState('T46');
+      const model = DB.models.find(m => m.id === selModel);
+
+      return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' } },
+        React.createElement('div', { className: 'topbar' },
+          React.createElement('div', { className: 'logo-badge' },
+            React.createElement('div', { className: 'logo-box' }, 'BERETTA'),
+            React.createElement('div', { className: 'logo-sub' }, 'EPC v1.0')
+          ),
+          React.createElement('div', { className: 'divider' }),
+          React.createElement('span', { className: 'tag tag-amber' }, 'ALFREDO s.r.l.'),
+          React.createElement('div', { className: 'divider' }),
+          React.createElement('select', {
+            value: selModel,
+            onChange: e => setSelModel(e.target.value),
+            style: { fontWeight: '700', fontSize: '13px' }
+          },
+            DB.models.map(m => React.createElement('option', { key: m.id, value: m.id }, 'Model: ' + m.id))
+          ),
+          React.createElement('div', { style: { display: 'flex', flexDirection: 'column', lineHeight: '1.2' } },
+            React.createElement('span', { className: 'sn-label' }, 'Serial Number'),
+            React.createElement('span', { className: 'sn-value' }, model.sn !== '—' ? model.sn : 'N/A')
+          ),
+          React.createElement('div', { style: { display: 'flex', flexDirection: 'column', lineHeight: '1.2' } },
+            React.createElement('span', { className: 'sn-label' }, 'Engine'),
+            React.createElement('span', { style: { fontSize: '11px', color: 'var(--text1)' } }, model.engine !== '—' ? model.engine : '—')
+          ),
+          React.createElement('div', { className: 'ml-auto', style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+            React.createElement('span', { className: 'tag tag-blue' }, 'T46 · 2025'),
+            React.createElement('span', { style: { fontSize: '11px', color: 'var(--text2)' } }, 'Rev. D · Oct 2025')
+          )
+        ),
+        React.createElement(App, { selModel, setSelModel })
+      );
+    }
+
+    // STATUS BAR
+    function FullApp() {
+      return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', height: '100vh' } },
+        React.createElement(Root),
+        React.createElement('div', { className: 'statusbar' },
+          React.createElement('div', { className: 'status-dot' }),
+          React.createElement('span', null, 'Beretta Alfredo s.r.l. — Via Parini 24, 20842 Besana Brianza (MB) Italy'),
+          React.createElement('span', { style: { marginLeft: 'auto', fontFamily: 'var(--font-mono)' } }, 'S/N 18925 · T46 · Hydraulic Drilling Machine')
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(FullApp));
+  </script>
+</body>
+
+</html>
