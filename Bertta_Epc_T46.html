@@ -1411,9 +1411,108 @@
 
     function loadHS() { try { return JSON.parse(localStorage.getItem('brt_hs3') || '{}'); } catch { return {}; } }
     function saveHS(hs) { try { localStorage.setItem('brt_hs3', JSON.stringify(hs)); } catch { } }
-    function loadImg(id) { try { return localStorage.getItem('brt_img_' + id) || null; } catch { return null; } }
-    function saveImg(id, data) { try { localStorage.setItem('brt_img_' + id, data); return true; } catch { return false; } }
-    function delImg(id) { try { localStorage.removeItem('brt_img_' + id); } catch { } }
+
+    // ── IndexedDB image storage (no size limit, persists across sessions) ──
+    const IDB_NAME = 'beretta_epc', IDB_STORE = 'images';
+    function openIDB() {
+      return new Promise((res, rej) => {
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+        req.onsuccess = e => res(e.target.result);
+        req.onerror = e => rej(e);
+      });
+    }
+    async function loadImg(id) {
+      try {
+        const db = await openIDB();
+        return new Promise(res => {
+          const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(id);
+          req.onsuccess = () => res(req.result || null);
+          req.onerror = () => res(null);
+        });
+      } catch { return null; }
+    }
+    async function saveImg(id, data) {
+      try {
+        const db = await openIDB();
+        return new Promise(res => {
+          const req = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE).put(data, id);
+          req.onsuccess = () => res(true);
+          req.onerror = () => res(false);
+        });
+      } catch { return false; }
+    }
+    async function delImg(id) {
+      try {
+        const db = await openIDB();
+        return new Promise(res => {
+          const tx = db.transaction(IDB_STORE, 'readwrite');
+          tx.objectStore(IDB_STORE).delete(id);
+          tx.oncomplete = () => res();
+        });
+      } catch { }
+    }
+    async function getAllImgKeys() {
+      try {
+        const db = await openIDB();
+        return new Promise(res => {
+          const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).getAllKeys();
+          req.onsuccess = () => res(req.result || []);
+          req.onerror = () => res([]);
+        });
+      } catch { return []; }
+    }
+
+    // ── Filename → Assembly ID mapping ──
+    // Special cases where filename ≠ assembly ID
+    const FILE_TO_ASM = { 'H44': 'E1037' };
+
+    // Build a comprehensive lookup: normalized filename variant → asmId
+    // Covers: assembly ID, drawing number (DIS. 561-065/0), and many separator variants
+    function buildFilenameLookup(assemblies) {
+      const map = {};
+      assemblies.forEach(a => {
+        // Match by assembly ID directly (e.g. "B2033")
+        map[a.id.toLowerCase()] = a.id;
+
+        // Match by drawing number if present
+        if (a.drawing) {
+          // e.g. "DIS. 561-065/0" → try several normalizations
+          const raw = a.drawing;
+          // Remove leading "DIS. " or "DIS." prefix
+          const noPrefix = raw.replace(/^DIS\.?\s*/i, '').trim();
+          // Variants: replace / and spaces with -, _, or nothing
+          const v1 = noPrefix.replace(/[\/\\\s]+/g, '-').replace(/-+/g, '-').toLowerCase(); // 561-065-0
+          const v2 = noPrefix.replace(/[\/\\\s]+/g, '_').replace(/_+/g, '_').toLowerCase(); // 561-065_0
+          const v3 = noPrefix.replace(/[\/\\\s\-\.]+/g, '').toLowerCase();                  // 5610650
+          const v4 = raw.replace(/[\/\\\s\-\.]+/g, '').toLowerCase();                       // dis5610650
+          [v1, v2, v3, v4].forEach(v => { if (v) map[v] = a.id; });
+        }
+      });
+      // Apply special overrides
+      Object.entries(FILE_TO_ASM).forEach(([k, v]) => { map[k.toLowerCase()] = v; });
+      return map;
+    }
+
+    // Try to resolve a filename to an assembly ID using the lookup map
+    function parseFilename(name, lookup) {
+      const noExt = name.replace(/\.[^.]+$/, '');    // strip extension
+      // Try the raw name (lowercase)
+      let key = noExt.toLowerCase();
+      if (lookup && lookup[key]) return lookup[key];
+      // Strip leading numeric prefix like "16." or "002_"
+      const stripped = noExt.replace(/^[\d]+[\._\-]/, '');
+      key = stripped.toLowerCase();
+      if (lookup && lookup[key]) return lookup[key];
+      // Normalize separators in the stripped name
+      const norm = stripped.replace(/[\s_\.]+/g, '-').replace(/-+/g, '-').toLowerCase();
+      if (lookup && lookup[norm]) return lookup[norm];
+      // Also try the fully-stripped version (no separators)
+      const flat = stripped.replace(/[\s_\.\-\/\\]+/g, '').toLowerCase();
+      if (lookup && lookup[flat]) return lookup[flat];
+      // Fallback: apply old static map or return stripped as-is (original behavior)
+      return FILE_TO_ASM[stripped] || stripped;
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // RICH TOOLTIP (fixed-position, follows mouse)
@@ -1445,8 +1544,8 @@
     // ─────────────────────────────────────────────────────────────────
     if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    function DiagramPanel({ asmId, parts, hs, onHsChange, selPart, onPartSel, height, editMode }) {
-      const [img, setImg] = useState(() => loadImg(asmId));
+    function DiagramPanel({ asmId, parts, hs, onHsChange, selPart, onPartSel, height, editMode, onImgLoaded }) {
+      const [img, setImg] = useState(null); // loaded async from IndexedDB
       const [natW, setNatW] = useState(1000);
       const [natH, setNatH] = useState(750);
       const [zoom, setZoom] = useState(1);
@@ -1461,11 +1560,21 @@
       const importRef = useRef(null);
       const asmHS = hs[asmId] || [];
 
+      // Load image from IndexedDB when assembly changes
       useEffect(() => {
-        const saved = loadImg(asmId);
-        setImg(saved);
-        if (saved) { const t = new Image(); t.onload = () => { setNatW(t.naturalWidth); setNatH(t.naturalHeight); }; t.src = saved; }
+        let cancelled = false;
+        setImg(null);
+        loadImg(asmId).then(saved => {
+          if (cancelled) return;
+          setImg(saved);
+          if (saved) {
+            const t = new Image();
+            t.onload = () => { if (!cancelled) { setNatW(t.naturalWidth); setNatH(t.naturalHeight); } };
+            t.src = saved;
+          }
+        });
         setPdfDoc(null); setPdfPage(1); setPdfTotal(0); setZoom(1);
+        return () => { cancelled = true; };
       }, [asmId]);
 
       // Auto-pan: when selPart changes and has a hotspot, scroll diagram to center it
@@ -1485,10 +1594,10 @@
         setLoading(true);
         if (f.type.startsWith('image/')) {
           const r = new FileReader();
-          r.onload = re => {
+          r.onload = async re => {
             const src = re.target.result;
-            const ok = saveImg(asmId, src);
-            if (!ok) alert('Image saved in memory only (too large for browser storage).');
+            await saveImg(asmId, src);
+            onImgLoaded && onImgLoaded(asmId);
             const t = new Image(); t.onload = () => { setNatW(t.naturalWidth); setNatH(t.naturalHeight); setImg(src); setLoading(false); }; t.src = src;
           };
           r.readAsDataURL(f);
@@ -1510,7 +1619,8 @@
         const ctx = cv.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
         await p.render({ canvasContext: ctx, viewport: vp }).promise;
         const src = cv.toDataURL('image/jpeg', 0.9);
-        saveImg(asmId, src); setImg(src); setNatW(vp.width); setNatH(vp.height);
+        await saveImg(asmId, src); onImgLoaded && onImgLoaded(asmId);
+        setImg(src); setNatW(vp.width); setNatH(vp.height);
       }
 
       async function navPdf(dir) {
@@ -1529,7 +1639,7 @@
         const nx = (ev.clientX - rect.left) / (natW * zoom);
         const ny = (ev.clientY - rect.top) / (natH * zoom);
         if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
-        const updated = { ...hs, [asmId]: [...asmHS.filter(d => d.item !== selPart), { id: Date.now(), item: selPart, nx, ny }] };
+        const updated = { ...hs, [asmId]: [...asmHS, { id: Date.now(), item: selPart, nx, ny }] };
         onHsChange(updated);
       }
 
@@ -1580,7 +1690,7 @@
           ),
 
           editMode && asmHS.length > 0 && h('button', { className: 'btn', onClick: clearHS, style: { color: 'var(--red)', borderColor: '#3b0a0a' } }, '× Clear'),
-          img && h('button', { className: 'btn', onClick: () => { if (confirm('Remove drawing for ' + asmId + '?')) { delImg(asmId); setImg(null); setPdfDoc(null); setPdfTotal(0); } }, title: 'Remove saved drawing', style: { color: 'var(--text2)' } }, '🗑'),
+          img && h('button', { className: 'btn', onClick: async () => { if (confirm('Remove drawing for ' + asmId + '?')) { await delImg(asmId); onImgLoaded && onImgLoaded(null); setImg(null); setPdfDoc(null); setPdfTotal(0); } }, title: 'Remove saved drawing', style: { color: 'var(--text2)' } }, '🗑'),
           h('div', { className: 'd-sep' }),
           h('button', { className: 'btn', onClick: exportJSON, title: 'Export hotspot coordinates as JSON' }, '↓ JSON'),
           h('label', { className: 'btn', style: { cursor: 'pointer' }, title: 'Import hotspot JSON' }, '↑ JSON', h('input', { ref: importRef, type: 'file', accept: '.json', style: { display: 'none' }, onChange: handleImport }))
@@ -1663,8 +1773,11 @@
       const [editMode, setEditMode] = useState(false);
       const [selPart, setSelPart] = useState(null);
       const [hs, setHs] = useState(loadHS);
+      const [loadedImgIds, setLoadedImgIds] = useState([]);
+      const [importProg, setImportProg] = useState(null); // {total, done, matched} | null
       const contentRef = useRef(null);
       const tableRef = useRef(null);
+      const folderRef = useRef(null);
 
       const model = useMemo(() => DB.models.find(m => m.id === selModel), [selModel]);
       const grouped = useMemo(() => { const g = {}; model.assemblies.forEach(a => { if (!g[a.group]) g[a.group] = []; g[a.group].push(a); }); return g; }, [model]);
@@ -1679,8 +1792,48 @@
       }, [asm, search]);
 
       const totalParts = useMemo(() => model.assemblies.reduce((s, a) => s + a.parts.length, 0), [model]);
+      const allAsmIds = useMemo(() => model.assemblies.map(a => a.id), [model]);
 
       useEffect(() => { saveHS(hs); }, [hs]);
+
+      // Load which assemblies already have images in IndexedDB on startup
+      useEffect(() => { getAllImgKeys().then(keys => setLoadedImgIds(keys)); }, []);
+
+      // Called whenever an image is saved or deleted
+      function handleImgLoaded() { getAllImgKeys().then(keys => setLoadedImgIds(keys)); }
+
+      // Bulk folder import: reads all images, matches by filename or drawing number
+      async function handleFolderImport(ev) {
+        const files = Array.from(ev.target.files).filter(f => f.type.startsWith('image/') || f.name.toLowerCase().endsWith('.pdf'));
+        if (!files.length) { ev.target.value = ''; return; }
+        const lookup = buildFilenameLookup(model.assemblies);
+        setImportProg({ total: files.length, done: 0, matched: 0 });
+        let matched = 0;
+        let matchedList = [];
+        let unmatchedList = [];
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const asmId = parseFilename(f.name, lookup);
+          if (allAsmIds.includes(asmId)) {
+            const data = await new Promise(res => {
+              const r = new FileReader(); r.onload = re => res(re.target.result); r.readAsDataURL(f);
+            });
+            await saveImg(asmId, data);
+            matched++;
+            matchedList.push(asmId + ' <- ' + f.name);
+          } else {
+            unmatchedList.push(f.name);
+          }
+          setImportProg({ total: files.length, done: i + 1, matched });
+        }
+        const keys = await getAllImgKeys();
+        setLoadedImgIds(keys);
+        setImportProg(null);
+        ev.target.value = '';
+        const unmatchedMsg = unmatchedList.length ? '\n\nSin coincidencia (' + unmatchedList.length + '):\n' + unmatchedList.join('\n') + '\n\nNombra los archivos con el ID (ej: B2033.png) o numero de plano (ej: 561-065-0.png).' : '';
+        const matchedMsg = matchedList.length ? '\n\nVinculados:\n' + matchedList.join('\n') : '';
+        alert('Importacion finalizada.\nArchivos procesados: ' + files.length + '\nImagenes vinculadas: ' + matched + matchedMsg + unmatchedMsg);
+      }
 
       // Scroll table row into view when part selected via hotspot
       useEffect(() => {
@@ -1703,9 +1856,24 @@
       return h('div', { className: 'main-layout' },
         // ── SIDEBAR ──
         h('div', { className: 'sidebar' },
-          h('div', { className: 'sidebar-header' },
-            h('span', { className: 'sidebar-title' }, 'Component Tree'),
-            h('span', { style: { fontSize: '10px', color: 'var(--text2)' } }, model.assemblies.length + ' asm')
+          h('div', { className: 'sidebar-header', style: { flexDirection: 'column', alignItems: 'stretch', gap: '8px', padding: '10px 12px' } },
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+              h('span', { className: 'sidebar-title' }, 'Component Tree'),
+              h('span', { style: { fontSize: '10px', color: 'var(--text2)', fontWeight: 'bold' } }, loadedImgIds.length + ' / ' + model.assemblies.length + ' imgs')
+            ),
+            h('button', { className: 'btn', onClick: () => folderRef.current?.click(), disabled: !!importProg },
+              importProg ? 'Importing... ' + importProg.done + '/' + importProg.total : '📂 Import Folder'
+            ),
+            h('input', {
+              ref: el => {
+                if (el) {
+                  folderRef.current = el;
+                  el.setAttribute('webkitdirectory', '');
+                  el.setAttribute('directory', '');
+                }
+              },
+              type: 'file', multiple: true, style: { display: 'none' }, onChange: handleFolderImport
+            })
           ),
           h('div', { className: 'sidebar-scroll' },
             Object.entries(grouped).map(([grp, asms]) => {
@@ -1720,6 +1888,7 @@
                 ),
                 open && asms.map(a => {
                   const hasHS = (hs[a.id] || []).length > 0;
+                  const hasImg = loadedImgIds.includes(a.id);
                   return h('div', {
                     key: a.id,
                     className: 'tree-item' + (selAsm === a.id ? ' active' : ''),
@@ -1730,6 +1899,7 @@
                       h('div', { className: 'ti-code' }, a.id + ' · ' + a.drawing)
                     ),
                     h('div', { className: 'ti-right' },
+                      hasImg && h('div', { title: 'Drawing loaded', style: { width: '5px', height: '5px', borderRadius: '50%', background: 'var(--blue)', flexShrink: 0 } }),
                       hasHS && h('div', { className: 'ti-hsdot', title: 'Has hotspots mapped' }),
                       h('div', { className: 'ti-badge' }, a.parts.length)
                     )
@@ -1781,7 +1951,8 @@
                 hs, onHsChange: setHs,
                 selPart, onPartSel: selectPart,
                 height: diagH,
-                editMode
+                editMode,
+                onImgLoaded: handleImgLoaded
               }),
               showDiag && h(ResizeH, { onDrag: handleResize }),
 
